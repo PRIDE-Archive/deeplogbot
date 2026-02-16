@@ -351,7 +351,7 @@ def supp_fig_protocol_overall(conn, output_dir):
     df = conn.execute(f"""
         SELECT method as protocol, COUNT(*) as downloads
         FROM read_parquet('{p}')
-        WHERE year >= 2020 {FILT()}
+        WHERE year >= 2021 {FILT()}
         GROUP BY method ORDER BY downloads DESC
     """).df()
 
@@ -443,7 +443,7 @@ def supp_fig_consistency_heatmap(conn, output_dir):
     yearly = conn.execute(f"""
         SELECT accession, year, COUNT(*) as downloads
         FROM read_parquet('{p}')
-        WHERE accession IN ({accessions_sql}) AND year >= 2020 {FILT()}
+        WHERE accession IN ({accessions_sql}) AND year >= 2021 {FILT()}
         GROUP BY accession, year ORDER BY accession, year
     """).df()
 

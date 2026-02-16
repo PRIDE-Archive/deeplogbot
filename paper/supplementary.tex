@@ -31,7 +31,7 @@
 }
 
 \title{\textbf{Supplementary Notes}\\[0.5em]
-\large Tracking Dataset Reuse in Proteomics: A Comprehensive Analysis of PRIDE Archive Downloads}
+\large Tracking dataset reuse in proteomics: a comprehensive analysis of PRIDE data download statistics}
 
 \author{
 \small Suresh Hewapathirana, Jingwen Bai, Chakradhar Bandla, Selvakumar Kamatchinathan,\\
@@ -64,12 +64,12 @@ PRIDE download logs are processed through the \texttt{nf-downloadstats} Nextflow
 
 \subsection{Data Scale and Coverage}
 
-The processed dataset covers the period January 2020 through January 2025 (Figure~\ref{fig:pride_overview}). Key metrics include 47.35 million total file downloads across 32,106 distinct projects, 2.26 million unique files, and 807,156 unique users. The analyzed projects represent 96.4\% of all public PRIDE datasets, and 88.0\% of PRIDE files have been downloaded at least once. Downloads originate from 136 countries with more than 100 downloads each.
+The processed Parquet file covers the period January 2020 through January 2025 (Figure~\ref{fig:pride_overview}). For downstream analysis, records from 2020 were excluded due to incomplete annual coverage, restricting the study period to 2021--2025. Key metrics include 47.35 million total file downloads across 32,106 distinct projects, 2.26 million unique files, and 807,156 unique users. The analyzed projects represent 96.4\% of all public PRIDE datasets, and 88.0\% of PRIDE files have been downloaded at least once. Downloads originate from 136 countries with more than 100 downloads each.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{figures/supp_pride_overview.png}
-\caption{Overview of PRIDE download activity (2020--2025). Overall scale metrics, reuse intensity across projects/files/users, file coverage, and geographic reach.}
+\caption{Overview of PRIDE download activity. The Parquet file covers 2020--2025; downstream analyses use 2021--2025 only. Overall scale metrics, reuse intensity across projects/files/users, file coverage, and geographic reach.}
 \label{fig:pride_overview}
 \end{figure}
 
@@ -451,7 +451,7 @@ Hourly download patterns (Figure~\ref{fig:hourly_patterns}) after bot removal sh
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.65\textwidth]{figures/figure1b_regional_distribution.pdf}
-\caption{PRIDE downloads by world region (after bot removal, 2020--2025).}
+\caption{PRIDE downloads by world region (after bot removal, 2021--2025).}
 \label{fig:regional_supp}
 \end{figure}
 

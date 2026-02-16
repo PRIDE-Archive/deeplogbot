@@ -53,13 +53,16 @@ EUROPEAN_COUNTRIES = [
     'Austria', 'Poland', 'Ireland',
 ]
 
-# World Bank low/middle income countries present in PRIDE data
-# China excluded here (upper-middle income, already dominant in panel A)
+# Wellcome Trust / OECD DAC low- and middle-income countries present in PRIDE data
+# (https://wellcome.org/research-funding/guidance/prepare-to-apply/low-and-middle-income-countries)
+# China excluded here (already dominant in other panels)
 LMIC_COUNTRIES = [
-    'India', 'Brazil', 'Mexico', 'Indonesia', 'Thailand',
-    'Colombia', 'Argentina', 'South Africa', 'Vietnam', 'Bangladesh',
-    'Pakistan', 'Peru', 'Chile', 'Philippines', 'Nigeria', 'Egypt',
-    'Kenya', 'Iran', 'Malaysia', 'Morocco', 'Turkey', 'Ukraine',
+    'India', 'Russia', 'Mexico', 'Brazil', 'Turkey', 'Argentina',
+    'Philippines', 'South Africa', 'Ukraine', 'Panama', 'Malaysia',
+    'Algeria', 'Thailand', 'Indonesia', 'Bulgaria', 'Colombia',
+    'Pakistan', 'Romania', 'Serbia', 'Cuba', 'Sri Lanka', 'Morocco',
+    'Egypt', 'Vietnam', 'Bangladesh', 'Peru', 'Tunisia', 'Kenya',
+    'Iran', 'Nigeria',
 ]
 
 # Color palette
@@ -1266,7 +1269,9 @@ def figure_hub_distribution(output_dir):
     # Label top hubs
     top_hubs = hubs.nlargest(5, 'total_downloads')
     for _, row in top_hubs.iterrows():
-        label = row['city'] if pd.notna(row['city']) and row['city'] else row['country']
+        city = row['city'] if pd.notna(row['city']) and row['city'] else ''
+        country = row['country'] if pd.notna(row['country']) else ''
+        label = f"{city}, {country}" if city else country
         ax_scatter.annotate(label, (row['unique_users'], row['total_downloads']),
                             fontsize=7, fontweight='bold',
                             xytext=(6, 4), textcoords='offset points')
