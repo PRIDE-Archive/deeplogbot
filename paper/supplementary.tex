@@ -64,12 +64,12 @@ PRIDE download logs are processed through the \texttt{nf-downloadstats} Nextflow
 
 \subsection{Data Scale and Coverage}
 
-The processed Parquet file covers the period January 2020 through January 2025 (Figure~\ref{fig:pride_overview}). For downstream analysis, records from 2020 were excluded due to incomplete annual coverage, restricting the study period to 2021--2025. Key metrics include 47.35 million total file downloads across 32,106 distinct projects, 2.26 million unique files, and 807,156 unique users. The analyzed projects represent 96.4\% of all public PRIDE datasets, and 88.0\% of PRIDE files have been downloaded at least once. Downloads originate from 136 countries with more than 100 downloads each.
+The processed Parquet file covers the period January 2021 through December 2025 (Figure~\ref{fig:pride_overview}). Key metrics include 159.3 million total file downloads across 35,528 distinct projects, 2.98 million unique files, and 9.80 million unique users. The analyzed projects represent essentially all public PRIDE datasets, and 91.7\% of PRIDE files have been downloaded at least once. Downloads originate from 194 countries with more than 100 downloads each.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{figures/supp_pride_overview.png}
-\caption{Overview of PRIDE download activity. The Parquet file covers 2020--2025; downstream analyses use 2021--2025 only. Overall scale metrics, reuse intensity across projects/files/users, file coverage, and geographic reach.}
+\caption{Overview of PRIDE download activity (2021--2025). Overall scale metrics, reuse intensity across projects/files/users, file coverage, and geographic reach.}
 \label{fig:pride_overview}
 \end{figure}
 
@@ -375,7 +375,7 @@ Figure~\ref{fig:agreement_supp} shows pairwise agreement between methods. Rules 
 
 \subsection{Classification Outcome Comparison}
 
-On the 1M-record benchmark sample, the two methods produce different classification distributions (Figure~\ref{fig:method_comparison}). The Rules method classifies 29\% of locations as bots (72\% of downloads), while Deep classifies 34\% (77\% of downloads).
+On the 1M-record benchmark sample, the two methods produce different classification distributions (Figure~\ref{fig:method_comparison}). The Rules method classifies 29\% of locations as bots (72\% of downloads), while Deep classifies 35\% (77\% of downloads).
 
 \begin{figure}[H]
 \centering
@@ -492,7 +492,7 @@ The top 20 most downloaded PRIDE datasets are shown in Figure~\ref{fig:top_datas
 
 \subsection{Dataset Download Consistency}
 
-The consistency heatmap (Figure~7B in the main text) shows that top datasets maintain sustained download activity across multiple years rather than one-time spikes. Beyond this, we rank datasets by a consistency score combining low coefficient of variation with high activity ratio (Figure~\ref{fig:consistency_scores}). PXD013868 achieves the highest consistency score (0.788), indicating steady, reliable reuse across the study period.
+The consistency heatmap (Figure~5B in the main text) shows that top datasets maintain sustained download activity across multiple years rather than one-time spikes. Beyond this, we rank datasets by a consistency score combining low coefficient of variation with high activity ratio (Figure~\ref{fig:consistency_scores}). PXD013868 achieves the highest consistency score (0.788), indicating steady, reliable reuse across the study period.
 
 \begin{figure}[H]
 \centering
@@ -541,7 +541,7 @@ PRIDE hosts 83.2\% of all ProteomeXchange datasets, followed by MassIVE (6.9\%) 
 
 Our ground truth labels are heuristic-derived rather than manually verified, which may introduce systematic biases in the benchmark evaluation. The geographic attribution relies on IP geolocation, which can be inaccurate for users behind VPNs or institutional proxies. The 2025 data is from a partial year, making year-over-year comparisons with full years approximate. Finally, we cannot distinguish multiple individual users who share a geographic location from a single user, which may affect location-level statistics.
 
-\bibliographystyle{unsrtnat}
+\bibliographystyle{proteomics}
 \bibliography{references}
 
 \end{document}
