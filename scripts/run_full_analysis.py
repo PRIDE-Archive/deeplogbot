@@ -151,7 +151,7 @@ def analysis_2_temporal(conn, parquet_path, output_dir, has_filter=False):
         COUNT(DISTINCT accession) as unique_datasets,
         COUNT(DISTINCT geo_location) as unique_locations
     FROM read_parquet('{p}')
-    WHERE year >= 2020 AND year <= 2025 {filt}
+    WHERE year >= 2021 AND year <= 2025 {filt}
     GROUP BY year
     ORDER BY year
     """
@@ -165,7 +165,7 @@ def analysis_2_temporal(conn, parquet_path, output_dir, has_filter=False):
         month,
         COUNT(*) as total_downloads
     FROM read_parquet('{p}')
-    WHERE year >= 2020 AND year <= 2025 {filt}
+    WHERE year >= 2021 AND year <= 2025 {filt}
     GROUP BY year, month
     ORDER BY year, month
     """
@@ -192,7 +192,7 @@ def analysis_3_protocols(conn, parquet_path, output_dir, has_filter=False):
             year,
             COUNT(*) as downloads
         FROM read_parquet('{p}')
-        WHERE year >= 2020 {filt}
+        WHERE year >= 2021 {filt}
         GROUP BY method, year
         ORDER BY year, downloads DESC
         """
@@ -362,7 +362,7 @@ def analysis_6_hourly_patterns(conn, parquet_path, output_dir, has_filter=False)
         DAYOFWEEK(date) as day_of_week,
         COUNT(*) as downloads
     FROM read_parquet('{p}')
-    WHERE year >= 2020 {filt}
+    WHERE year >= 2021 {filt}
     GROUP BY hour, day_of_week
     ORDER BY hour, day_of_week
     """

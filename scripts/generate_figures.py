@@ -27,15 +27,15 @@ import duckdb
 
 # Style settings for publication
 plt.rcParams.update({
-    'font.size': 10,
+    'font.size': 12,
     'font.family': 'sans-serif',
-    'axes.labelsize': 11,
-    'axes.titlesize': 12,
-    'xtick.labelsize': 9,
-    'ytick.labelsize': 9,
-    'legend.fontsize': 9,
-    'figure.dpi': 300,
-    'savefig.dpi': 300,
+    'axes.labelsize': 13,
+    'axes.titlesize': 13,
+    'xtick.labelsize': 11,
+    'ytick.labelsize': 11,
+    'legend.fontsize': 10,
+    'figure.dpi': 600,
+    'savefig.dpi': 600,
     'savefig.bbox': 'tight',
     'savefig.pad_inches': 0.1,
 })
@@ -53,13 +53,16 @@ EUROPEAN_COUNTRIES = [
     'Austria', 'Poland', 'Ireland',
 ]
 
-# World Bank low/middle income countries present in PRIDE data
-# China excluded here (upper-middle income, already dominant in panel A)
+# Wellcome Trust / OECD DAC low- and middle-income countries present in PRIDE data
+# (https://wellcome.org/research-funding/guidance/prepare-to-apply/low-and-middle-income-countries)
+# China excluded here (already dominant in other panels)
 LMIC_COUNTRIES = [
-    'India', 'Brazil', 'Mexico', 'Indonesia', 'Thailand',
-    'Colombia', 'Argentina', 'South Africa', 'Vietnam', 'Bangladesh',
-    'Pakistan', 'Peru', 'Chile', 'Philippines', 'Nigeria', 'Egypt',
-    'Kenya', 'Iran', 'Malaysia', 'Morocco', 'Turkey', 'Ukraine',
+    'India', 'Russia', 'Mexico', 'Brazil', 'Turkey', 'Argentina',
+    'Philippines', 'South Africa', 'Ukraine', 'Panama', 'Malaysia',
+    'Algeria', 'Thailand', 'Indonesia', 'Bulgaria', 'Colombia',
+    'Pakistan', 'Romania', 'Serbia', 'Cuba', 'Sri Lanka', 'Morocco',
+    'Egypt', 'Vietnam', 'Bangladesh', 'Peru', 'Tunisia', 'Kenya',
+    'Iran', 'Nigeria',
 ]
 
 # Color palette
@@ -98,7 +101,7 @@ def figure_bot_detection_overview(output_dir):
     ax.set_title('(A) PRIDE Logs Workflow', fontsize=12, fontweight='bold', pad=10)
 
     # Style definitions
-    def draw_box(ax, x, y, w, h, text, color='#EBF5FB', edge='#2980B9', fontsize=8, bold=False):
+    def draw_box(ax, x, y, w, h, text, color='#EBF5FB', edge='#2980B9', fontsize=9, bold=False):
         box = FancyBboxPatch((x, y), w, h, boxstyle='round,pad=0.15',
                              facecolor=color, edgecolor=edge, linewidth=1.5)
         ax.add_patch(box)
@@ -118,28 +121,28 @@ def figure_bot_detection_overview(output_dir):
                                        facecolor='none', edgecolor='#27AE60', linewidth=2.0,
                                        linestyle='--')
     ax.add_patch(nf_rect)
-    ax.text(0.3, 9.65, 'nf-downloadstats', fontsize=9, fontweight='bold', color='#27AE60',
+    ax.text(0.3, 9.65, 'nf-downloadstats', fontsize=10, fontweight='bold', color='#27AE60',
             fontstyle='italic')
 
     # Row 1: Data collection
-    draw_box(ax, 0.2, 8.3, 2.2, 1.0, 'PRIDE\nLog Files\n(TSV)', color='#FDEBD0', edge='#E67E22', fontsize=8, bold=True)
+    draw_box(ax, 0.2, 8.3, 2.2, 1.0, 'PRIDE\nLog Files\n(TSV)', color='#FDEBD0', edge='#E67E22', fontsize=9, bold=True)
     draw_arrow(ax, 2.4, 8.8, 3.0, 8.8)
-    draw_box(ax, 3.0, 8.3, 3.0, 1.0, 'Parse, Filter\n& Merge', color='#D5F5E3', edge='#27AE60', fontsize=8)
+    draw_box(ax, 3.0, 8.3, 3.0, 1.0, 'Parse, Filter\n& Merge', color='#D5F5E3', edge='#27AE60', fontsize=9)
     draw_arrow(ax, 6.0, 8.8, 6.6, 8.8)
-    draw_box(ax, 6.6, 8.3, 2.6, 1.0, 'Parquet\n159M records\n(4.7 GB)', color='#FDEBD0', edge='#E67E22', fontsize=8, bold=True)
+    draw_box(ax, 6.6, 8.3, 2.6, 1.0, 'Parquet\n159M records\n(4.7 GB)', color='#FDEBD0', edge='#E67E22', fontsize=9, bold=True)
 
     # --- Component 2: DeepLogBot (bottom section) ---
     lg_rect = mpatches.FancyBboxPatch((0.05, -0.15), 9.4, 7.55, boxstyle='round,pad=0.15',
                                        facecolor='none', edgecolor='#2980B9', linewidth=2.0,
                                        linestyle='--')
     ax.add_patch(lg_rect)
-    ax.text(0.3, 7.2, 'DeepLogBot', fontsize=9, fontweight='bold', color='#2980B9',
+    ax.text(0.3, 7.2, 'DeepLogBot', fontsize=10, fontweight='bold', color='#2980B9',
             fontstyle='italic')
 
     # Row 2: Location aggregation + Feature extraction
-    draw_box(ax, 0.3, 5.9, 4.2, 1.0, 'Location Aggregation\n47,987 geographic locations', color='#EBF5FB', edge='#2980B9', fontsize=8)
+    draw_box(ax, 0.3, 5.9, 4.2, 1.0, 'Location Aggregation\n47,987 geographic locations', color='#EBF5FB', edge='#2980B9', fontsize=9)
     draw_arrow(ax, 4.5, 6.4, 5.0, 6.4)
-    draw_box(ax, 5.0, 5.9, 4.2, 1.0, 'Feature Extraction\n60+ behavioral features\n(activity, temporal, discriminative)', color='#EBF5FB', edge='#2980B9', fontsize=7.5)
+    draw_box(ax, 5.0, 5.9, 4.2, 1.0, 'Feature Extraction\n60+ behavioral features\n(activity, temporal, discriminative)', color='#EBF5FB', edge='#2980B9', fontsize=8.5)
 
     # Arrows inside DeepLogBot from top to both boxes (no arrow from Parquet)
     midx = 4.75  # midpoint between the two boxes
@@ -152,14 +155,14 @@ def figure_bot_detection_overview(output_dir):
     draw_arrow(ax, 7.1, 5.9, 4.75, 5.4)
 
     # Row 3: Anomaly detection
-    draw_box(ax, 2.5, 4.3, 4.5, 0.9, 'Anomaly Detection\nIsolation Forest (contamination=15%)', color='#F5EEF8', edge='#8E44AD', fontsize=8)
+    draw_box(ax, 2.5, 4.3, 4.5, 0.9, 'Anomaly Detection\nIsolation Forest (contamination=15%)', color='#F5EEF8', edge='#8E44AD', fontsize=9)
 
     # Arrow down to methods
     draw_arrow(ax, 4.75, 4.3, 4.75, 3.8)
 
     # Row 4: Two classification methods side by side
-    draw_box(ax, 1.0, 2.7, 3.0, 0.9, 'Rule-Based\nYAML thresholds\n3-level hierarchy', color='#FADBD8', edge='#E74C3C', fontsize=7.5, bold=False)
-    draw_box(ax, 5.5, 2.7, 3.0, 0.9, 'Deep Architecture\n40+ extra features\n2-stage pipeline', color='#FADBD8', edge='#E74C3C', fontsize=7.5, bold=False)
+    draw_box(ax, 1.0, 2.7, 3.0, 0.9, 'Rule-Based\nYAML thresholds\n3-level hierarchy', color='#FADBD8', edge='#E74C3C', fontsize=8.5, bold=False)
+    draw_box(ax, 5.5, 2.7, 3.0, 0.9, 'Deep Architecture\n40+ extra features\n2-stage pipeline', color='#FADBD8', edge='#E74C3C', fontsize=8.5, bold=False)
 
     draw_arrow(ax, 4.75, 3.8, 2.5, 3.6)
     draw_arrow(ax, 4.75, 3.8, 7.0, 3.6)
@@ -169,12 +172,12 @@ def figure_bot_detection_overview(output_dir):
     draw_arrow(ax, 7.0, 2.7, 4.75, 2.2)
 
     # Row 5: Hierarchical classification output
-    draw_box(ax, 2.5, 1.1, 4.5, 0.9, 'Hierarchical Classification\nL1: Organic vs Automated\nL2: Bot vs Hub\nL3: Subcategory', color='#D4EFDF', edge='#27AE60', fontsize=7.5)
+    draw_box(ax, 2.5, 1.1, 4.5, 0.9, 'Hierarchical Classification\nL1: Organic vs Automated\nL2: Bot vs Hub\nL3: Subcategory', color='#D4EFDF', edge='#27AE60', fontsize=8.5)
 
     # Arrow to final output
     draw_arrow(ax, 4.75, 1.1, 4.75, 0.7)
     draw_box(ax, 1.5, 0.0, 6.5, 0.6, 'Bot-filtered dataset: 35.4M downloads, 34,908 datasets, 208 countries',
-             color='#D5F5E3', edge='#27AE60', fontsize=7.5, bold=True)
+             color='#D5F5E3', edge='#27AE60', fontsize=8.5, bold=True)
 
     # ---- Panel B: Classification distribution (download share bar chart) ----
     ax2 = fig.add_subplot(gs[0, 1])
@@ -199,7 +202,7 @@ def figure_bot_detection_overview(output_dir):
         pct = count / total_locs * 100
         y_pos = max(bar.get_height() / 2, 5)
         ax2.text(bar.get_x() + bar.get_width() / 2, y_pos,
-                f'n={count:,}\n({pct:.1f}% locs)', ha='center', fontsize=7.5,
+                f'n={count:,}\n({pct:.1f}% locs)', ha='center', fontsize=9,
                 color='white', fontweight='bold')
 
     plt.savefig(output_dir / 'figure_bot_detection_overview.pdf', format='pdf', bbox_inches='tight')
@@ -286,26 +289,34 @@ def figure_2_temporal(output_dir):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
     # Panel A: Total downloads per year
-    ax1.bar(df['year'], df['total_downloads'] / 1e6, color='#3498DB', edgecolor='white', width=0.7)
+    years = df['year'].astype(int)
+    ax1.bar(years, df['total_downloads'] / 1e6, color='#3498DB', edgecolor='white', width=0.7)
     ax1.set_xlabel('Year')
     ax1.set_ylabel('Total Downloads (millions)')
     ax1.set_title('A) Annual Download Volume')
     ax1.spines['top'].set_visible(False)
     ax1.spines['right'].set_visible(False)
+    ax1.set_xticks(years)
+    ax1.set_xticklabels(years)
 
+    max_dl = df['total_downloads'].max() / 1e6
+    ax1.set_ylim(0, max_dl * 1.25)
     for _, row in df.iterrows():
-        ax1.text(row['year'], row['total_downloads'] / 1e6 + 0.5,
-                f"{row['total_downloads']/1e6:.1f}M", ha='center', fontsize=8)
+        ax1.text(int(row['year']), row['total_downloads'] / 1e6 + max_dl * 0.03,
+                f"{row['total_downloads']/1e6:.1f}M", ha='center', fontsize=11)
 
     # Panel B: Unique datasets and locations
+    years = df['year'].astype(int)
     ax2b = ax2.twinx()
-    l1 = ax2.plot(df['year'], df['unique_datasets'] / 1e3, 'o-', color='#E67E22', label='Unique datasets (k)')
-    l2 = ax2b.plot(df['year'], df['unique_locations'] / 1e3, 's--', color='#9B59B6', label='Unique locations (k)')
+    l1 = ax2.plot(years, df['unique_datasets'] / 1e3, 'o-', color='#E67E22', label='Unique datasets (k)')
+    l2 = ax2b.plot(years, df['unique_locations'] / 1e3, 's--', color='#9B59B6', label='Unique locations (k)')
     ax2.set_xlabel('Year')
     ax2.set_ylabel('Unique Datasets (thousands)', color='#E67E22')
     ax2b.set_ylabel('Unique Locations (thousands)', color='#9B59B6')
     ax2.set_title('B) Dataset and Location Growth')
     ax2.spines['top'].set_visible(False)
+    ax2.set_xticks(years)
+    ax2.set_xticklabels(years)
 
     lines = l1 + l2
     labels = [l.get_label() for l in lines]
@@ -556,14 +567,14 @@ def figure_5_concentration(output_dir):
     if top1_idx > 0:
         ax1.axvline(x=top1_idx, color='red', linestyle='--', alpha=0.7, linewidth=1)
         ax1.text(top1_idx * 1.3, downloads[0] * 0.5, 'Top 1%',
-                 color='red', fontsize=9, fontweight='bold')
+                 color='red', fontsize=11, fontweight='bold')
 
     # Annotate key statistics
     textstr = (f'Gini = {stats["gini_coefficient"]:.2f}\n'
                f'Top 1%: {stats["top_1pct_downloads_pct"]:.1f}% of DL\n'
                f'Top 10%: {stats["top_10pct_downloads_pct"]:.1f}% of DL\n'
                f'Median: {stats["median_downloads"]:,} DL')
-    ax1.text(0.95, 0.95, textstr, transform=ax1.transAxes, fontsize=9,
+    ax1.text(0.95, 0.95, textstr, transform=ax1.transAxes, fontsize=11,
              verticalalignment='top', horizontalalignment='right',
              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
@@ -574,15 +585,15 @@ def figure_5_concentration(output_dir):
         im = ax2.imshow(data, cmap='YlOrRd', aspect='auto', interpolation='nearest')
 
         ax2.set_xticks(range(len(heatmap_data.columns)))
-        ax2.set_xticklabels(heatmap_data.columns.astype(int), fontsize=9)
+        ax2.set_xticklabels(heatmap_data.columns.astype(int), fontsize=11)
         ax2.set_yticks(range(len(heatmap_data.index)))
         ylabels = [f'{acc}  ({active_years[acc]}/{len(heatmap_data.columns)} yrs)'
                    for acc in heatmap_data.index]
-        ax2.set_yticklabels(ylabels, fontsize=7)
+        ax2.set_yticklabels(ylabels, fontsize=8.5)
         ax2.set_xlabel('Year')
 
         cbar = plt.colorbar(im, ax=ax2, fraction=0.03, pad=0.04)
-        cbar.set_label('Downloads (log$_{10}$ scale)', fontsize=9)
+        cbar.set_label('Downloads (log$_{10}$ scale)', fontsize=11)
 
         # Annotate cells
         for i in range(data.shape[0]):
@@ -597,7 +608,7 @@ def figure_5_concentration(output_dir):
                         txt = str(val)
                     color = 'white' if data[i, j] > 3.5 else 'black'
                     ax2.text(j, i, txt, ha='center', va='center',
-                             fontsize=5.5, color=color, fontweight='bold')
+                             fontsize=7, color=color, fontweight='bold')
 
         ax2.set_title('(B) Top 25 Datasets: Download Consistency', fontsize=11, fontweight='bold', loc='left', pad=15)
     else:
@@ -642,19 +653,19 @@ def figure_5_concentration(output_dir):
             x_fit = np.linspace(log_x.min(), log_x.max(), 100)
             ax3.plot(10**x_fit, 10**(slope * x_fit + intercept), 'r--', alpha=0.6, linewidth=1.5, zorder=4)
             ax3.text(0.05, 0.95, f'Spearman $\\rho$ = {rho:.3f}\np = {p_val:.2e}\nn = {len(df_cited)}',
-                     transform=ax3.transAxes, fontsize=9, verticalalignment='top',
+                     transform=ax3.transAxes, fontsize=11, verticalalignment='top',
                      bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
         for _, row in df_cited.nlargest(5, 'total_downloads').iterrows():
             ax3.annotate(row['accession'], (row['citation_count'], row['total_downloads']),
-                         fontsize=6.5, alpha=0.8, xytext=(5, 5), textcoords='offset points')
+                         fontsize=8.5, alpha=0.8, xytext=(5, 5), textcoords='offset points')
 
         ax3.set_xscale('log')
         ax3.set_yscale('log')
         ax3.set_xlabel('EuropePMC Reuse Citation Count')
         ax3.set_ylabel('Total Downloads (bot-filtered)')
         cb = plt.colorbar(sc, ax=ax3, shrink=0.8, pad=0.02)
-        cb.set_label('Download Consistency\n(years active / 5)', fontsize=9)
+        cb.set_label('Download Consistency\n(years active / 5)', fontsize=11)
         ax3.spines['top'].set_visible(False)
         ax3.spines['right'].set_visible(False)
         ax3.grid(True, alpha=0.3, which='both')
@@ -873,7 +884,7 @@ def figure_7_bubble_chart(output_dir):
         for lx, ly in labeled:
             if abs(np.log10(x) - np.log10(lx)) < 0.15 and abs(np.log10(y) - np.log10(ly)) < 0.08:
                 y_off += 8
-        fontsize = 8 if row['total_downloads'] > 500000 else 7
+        fontsize = 9.5 if row['total_downloads'] > 500000 else 8.5
         fontweight = 'bold' if row['total_downloads'] > 1000000 else 'normal'
         ax_bubble.annotate(
             name, (x, y),
@@ -893,7 +904,7 @@ def figure_7_bubble_chart(output_dir):
     ax_bubble.legend(
         legend_bubbles, [f'{v}' for v in legend_sizes],
         title='DL/User (size)', loc='upper left',
-        frameon=True, framealpha=0.9, fontsize=8, title_fontsize=8,
+        frameon=True, framealpha=0.9, fontsize=10, title_fontsize=10,
         labelspacing=1.5, borderpad=1.2,
     )
     ax_bubble.spines['top'].set_visible(False)
@@ -914,7 +925,7 @@ def figure_7_bubble_chart(output_dir):
         ax_europe.set_xlabel('Year')
         ax_europe.set_ylabel('Downloads (millions)')
         ax_europe.set_title('(B) European Countries', fontsize=11, fontweight='bold', loc='left')
-        ax_europe.legend(loc='upper left', fontsize=6.5, ncol=3, frameon=False)
+        ax_europe.legend(loc='upper left', fontsize=8, ncol=3, frameon=False)
         ax_europe.spines['top'].set_visible(False)
         ax_europe.spines['right'].set_visible(False)
         ax_europe.grid(True, alpha=0.2)
@@ -937,7 +948,7 @@ def figure_7_bubble_chart(output_dir):
         ax_lmic.set_xlabel('Year')
         ax_lmic.set_ylabel('Downloads (thousands)')
         ax_lmic.set_title('(C) Low/Middle Income Countries', fontsize=11, fontweight='bold', loc='left')
-        ax_lmic.legend(loc='upper left', fontsize=6.5, ncol=3, frameon=False)
+        ax_lmic.legend(loc='upper left', fontsize=8, ncol=3, frameon=False)
         ax_lmic.spines['top'].set_visible(False)
         ax_lmic.spines['right'].set_visible(False)
         ax_lmic.grid(True, alpha=0.2)
@@ -1082,7 +1093,7 @@ def figure_filetype_by_region(output_dir):
     region_totals = df.groupby('region')['downloads'].sum()
     df['pct'] = df.apply(lambda r: r['downloads'] / region_totals[r['region']] * 100, axis=1)
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5.5), gridspec_kw={'width_ratios': [1.4, 1]})
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6), gridspec_kw={'width_ratios': [1.4, 1]})
 
     # ---- Panel A: Grouped bar chart ----
     ax = axes[0]
@@ -1102,7 +1113,7 @@ def figure_filetype_by_region(output_dir):
                       color=plt.cm.Set2(i / n_regions), edgecolor='white', linewidth=0.5)
 
     ax.set_xticks(x)
-    ax.set_xticklabels([cat_labels[c] for c in cat_order], fontsize=8)
+    ax.set_xticklabels([cat_labels[c] for c in cat_order], fontsize=10)
     ax.set_ylabel('Percentage of Downloads (%)')
     ax.legend(fontsize=9, frameon=False)
     ax.spines['top'].set_visible(False)
@@ -1144,11 +1155,11 @@ def figure_filetype_by_region(output_dir):
         for k, (v, l) in enumerate(zip(vals, left)):
             if v > 5:
                 ax2.text(l + v / 2, k, f'{v:.0f}%', ha='center', va='center',
-                         fontsize=9, fontweight='bold', color='white')
+                         fontsize=11, fontweight='bold', color='white')
         left += vals
 
     ax2.set_yticks(y_pos)
-    ax2.set_yticklabels([region_labels[r] for r in region_order], fontsize=10)
+    ax2.set_yticklabels([region_labels[r] for r in region_order], fontsize=11)
     ax2.set_xlabel('Percentage of Downloads (%)')
     ax2.legend(fontsize=8, loc='lower right', frameon=True, framealpha=0.9)
     ax2.spines['top'].set_visible(False)
@@ -1182,7 +1193,7 @@ def figure_hub_distribution(output_dir):
         print("    SKIPPED - no hubs")
         return
 
-    fig = plt.figure(figsize=(16, 5.5))
+    fig = plt.figure(figsize=(18, 6.5))
     gs = gridspec.GridSpec(1, 3, width_ratios=[1.1, 1, 1], wspace=0.35)
     ax_map = fig.add_subplot(gs[0, 0])
     ax_bar = fig.add_subplot(gs[0, 1])
@@ -1227,7 +1238,7 @@ def figure_hub_distribution(output_dir):
         s = np.clip(dl / dl_vals.max() * 300, 10, 300)
         ax_map.scatter([], [], s=s, c='#3498DB', alpha=0.6, edgecolors='navy',
                        linewidth=0.4, label=label)
-    ax_map.legend(title='Downloads', loc='lower left', fontsize=7, title_fontsize=7,
+    ax_map.legend(title='Downloads', loc='lower left', fontsize=9, title_fontsize=9,
                   frameon=True, framealpha=0.9, labelspacing=1.2)
 
     # ---- Panel B: Top 15 countries by hub count ----
@@ -1238,7 +1249,7 @@ def figure_hub_distribution(output_dir):
     bars = ax_bar.barh(range(len(country_counts)), country_counts.values, color=colors_bar,
                        edgecolor='navy', linewidth=0.3, alpha=0.8)
     ax_bar.set_yticks(range(len(country_counts)))
-    ax_bar.set_yticklabels(country_counts.index, fontsize=8)
+    ax_bar.set_yticklabels(country_counts.index, fontsize=10)
     ax_bar.invert_yaxis()
     ax_bar.set_xlabel('Number of Hubs')
     ax_bar.spines['top'].set_visible(False)
@@ -1249,7 +1260,7 @@ def figure_hub_distribution(output_dir):
     for i, (country, count) in enumerate(country_counts.items()):
         dl = country_downloads.get(country, 0)
         label = f'{dl/1e6:.1f}M' if dl >= 100000 else f'{dl/1e3:.0f}K'
-        ax_bar.text(count + 0.5, i, label, va='center', fontsize=7, color='gray')
+        ax_bar.text(count + 0.5, i, label, va='center', fontsize=9, color='gray')
 
     # ---- Panel C: Hub users vs downloads (log-log) ----
     ax_scatter.scatter(hubs['unique_users'], hubs['total_downloads'],
@@ -1266,9 +1277,11 @@ def figure_hub_distribution(output_dir):
     # Label top hubs
     top_hubs = hubs.nlargest(5, 'total_downloads')
     for _, row in top_hubs.iterrows():
-        label = row['city'] if pd.notna(row['city']) and row['city'] else row['country']
+        city = row['city'] if pd.notna(row['city']) and row['city'] else ''
+        country = row['country'] if pd.notna(row['country']) else ''
+        label = f"{city}, {country}" if city else country
         ax_scatter.annotate(label, (row['unique_users'], row['total_downloads']),
-                            fontsize=7, fontweight='bold',
+                            fontsize=9, fontweight='bold',
                             xytext=(6, 4), textcoords='offset points')
 
     plt.savefig(output_dir / 'figure_hub_distribution.pdf', format='pdf', bbox_inches='tight')
