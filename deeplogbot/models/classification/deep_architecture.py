@@ -431,7 +431,7 @@ def classify_locations_deep(
         seed_labels = np.array(seed_labels)
         seed_weights = np.array(seed_weights)
 
-        logger.info(f"\n  Phase 3: Training fusion meta-learner ...")
+        logger.info("\n  Phase 3: Training fusion meta-learner ...")
         logger.info(f"    Training set: {len(seed_indices)} seeds "
                     f"({(seed_labels == LABEL_ORGANIC).sum()} organic, "
                     f"{(seed_labels == LABEL_BOT).sum()} bot, "
