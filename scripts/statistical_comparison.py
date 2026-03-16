@@ -47,7 +47,7 @@ def load_method_results(benchmark_dir: str, methods: list) -> dict:
 
 def get_unified_label(df: pd.DataFrame) -> pd.Series:
     """Map hierarchical classification to unified 3-class labels."""
-    labels = pd.Series('organic', index=df.index)
+    labels = pd.Series('user', index=df.index)
     if 'automation_category' in df.columns:
         labels[df['automation_category'] == 'bot'] = 'bot'
         labels[df['automation_category'] == 'legitimate_automation'] = 'hub'
@@ -210,7 +210,7 @@ def download_impact_analysis(method_results: dict) -> dict:
     Analyze download volume impact of different classifications.
 
     For each method, compute what percentage of total downloads are
-    classified as bot, hub, and organic.
+    classified as bot, hub, and user.
     """
     logger.info("\n" + "=" * 70)
     logger.info("DOWNLOAD IMPACT ANALYSIS")
@@ -225,7 +225,7 @@ def download_impact_analysis(method_results: dict) -> dict:
         total = df['total_downloads'].sum()
 
         method_impact = {}
-        for cat in ['bot', 'hub', 'organic']:
+        for cat in ['bot', 'hub', 'user']:
             mask = labels == cat
             cat_downloads = df.loc[mask, 'total_downloads'].sum()
             cat_locations = mask.sum()
@@ -288,7 +288,7 @@ def generate_comparison_report(
             report.append("")
             report.append("| Category | Locations | Loc % | Downloads | DL % |")
             report.append("|----------|-----------|-------|-----------|------|")
-            for cat in ['bot', 'hub', 'organic']:
+            for cat in ['bot', 'hub', 'user']:
                 d = cats.get(cat, {})
                 report.append(
                     f"| {cat} | {d.get('locations', 0):,} | {d.get('locations_pct', 0):.1f}% | "

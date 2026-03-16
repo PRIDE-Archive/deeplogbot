@@ -70,11 +70,11 @@ def train_meta_learner(X_train: np.ndarray, y_train: np.ndarray,
     )
     base_model.fit(X_scaled, y_train, sample_weight=weights)
 
-    # Calibrate probabilities (Platt scaling)
+    # Calibrate probabilities (Platt scaling with proper CV to avoid leakage)
     try:
-        calibrated = CalibratedClassifierCV(base_model, cv='prefit', method='sigmoid')
+        calibrated = CalibratedClassifierCV(base_model, cv=5, method='sigmoid')
         calibrated.fit(X_scaled, y_train, sample_weight=weights)
-        logger.info("  Meta-learner trained with Platt calibration")
+        logger.info("  Meta-learner trained with Platt calibration (cv=5)")
         return calibrated, scaler
     except Exception as e:
         logger.warning(f"  Calibration failed ({e}), using uncalibrated model")
@@ -189,11 +189,11 @@ def train_meta_learner_gold_standard(X_train: np.ndarray,
     )
     base_model.fit(X_scaled, y_train, sample_weight=sample_weights)
 
-    # Calibrate probabilities (Platt scaling, prefit)
+    # Calibrate probabilities (Platt scaling with proper CV to avoid leakage)
     try:
-        calibrated = CalibratedClassifierCV(base_model, cv='prefit', method='sigmoid')
+        calibrated = CalibratedClassifierCV(base_model, cv=5, method='sigmoid')
         calibrated.fit(X_scaled, y_train, sample_weight=sample_weights)
-        logger.info("  Gold-standard meta-learner trained with Platt calibration")
+        logger.info("  Gold-standard meta-learner trained with Platt calibration (cv=5)")
         return calibrated, scaler
     except Exception as e:
         logger.warning(f"  Calibration failed ({e}), using uncalibrated model")

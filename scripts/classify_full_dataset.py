@@ -87,7 +87,8 @@ def classify_dataset(
             (df.get('automation_category', pd.Series()) == 'legitimate_automation') |
             (df.get('behavior_type', pd.Series()) == 'hub')
         )
-        df['is_organic'] = ~df['is_bot'] & ~df['is_hub']
+        df['is_user'] = ~df['is_bot'] & ~df['is_hub']
+        df['is_organic'] = df['is_user']  # backward compatibility
 
         # Save enriched version
         final_path = os.path.join(output_dir, 'pride_classification_final.csv')
@@ -123,15 +124,15 @@ def generate_classification_summary(
     # Classification distribution
     bot_mask = df['is_bot']
     hub_mask = df['is_hub']
-    organic_mask = df['is_organic']
+    user_mask = df['is_user']
 
     bot_locs = bot_mask.sum()
     hub_locs = hub_mask.sum()
-    organic_locs = organic_mask.sum()
+    user_locs = user_mask.sum()
 
     bot_dl = df.loc[bot_mask, 'total_downloads'].sum() if 'total_downloads' in df.columns else 0
     hub_dl = df.loc[hub_mask, 'total_downloads'].sum() if 'total_downloads' in df.columns else 0
-    organic_dl = df.loc[organic_mask, 'total_downloads'].sum() if 'total_downloads' in df.columns else 0
+    user_dl = df.loc[user_mask, 'total_downloads'].sum() if 'total_downloads' in df.columns else 0
 
     logger.info("\n" + "=" * 70)
     logger.info("CLASSIFICATION SUMMARY")
@@ -145,8 +146,8 @@ def generate_classification_summary(
                 f"{bot_dl:>12,} DL ({100*bot_dl/total_downloads:.1f}%)" if total_downloads > 0 else "")
     logger.info(f"    Hub:     {hub_locs:>6,} locs ({100*hub_locs/total_locs:.1f}%), "
                 f"{hub_dl:>12,} DL ({100*hub_dl/total_downloads:.1f}%)" if total_downloads > 0 else "")
-    logger.info(f"    Organic: {organic_locs:>6,} locs ({100*organic_locs/total_locs:.1f}%), "
-                f"{organic_dl:>12,} DL ({100*organic_dl/total_downloads:.1f}%)" if total_downloads > 0 else "")
+    logger.info(f"    User:    {user_locs:>6,} locs ({100*user_locs/total_locs:.1f}%), "
+                f"{user_dl:>12,} DL ({100*user_dl/total_downloads:.1f}%)" if total_downloads > 0 else "")
 
     # Geographic distribution
     if 'country' in df.columns:
@@ -209,11 +210,11 @@ def generate_classification_summary(
                 'downloads': int(hub_dl),
                 'downloads_pct': float(100 * hub_dl / total_downloads) if total_downloads > 0 else 0,
             },
-            'organic': {
-                'locations': int(organic_locs),
-                'locations_pct': float(100 * organic_locs / total_locs) if total_locs > 0 else 0,
-                'downloads': int(organic_dl),
-                'downloads_pct': float(100 * organic_dl / total_downloads) if total_downloads > 0 else 0,
+            'user': {
+                'locations': int(user_locs),
+                'locations_pct': float(100 * user_locs / total_locs) if total_locs > 0 else 0,
+                'downloads': int(user_dl),
+                'downloads_pct': float(100 * user_dl / total_downloads) if total_downloads > 0 else 0,
             },
         },
         'countries': int(df['country'].nunique()) if 'country' in df.columns else 0,
@@ -235,8 +236,8 @@ def generate_classification_summary(
             .sum().sort_values(ascending=False).head(30)
             .to_dict()
         )
-        summary['organic_by_country'] = (
-            df[organic_mask].groupby('country')['total_downloads']
+        summary['user_by_country'] = (
+            df[user_mask].groupby('country')['total_downloads']
             .sum().sort_values(ascending=False).head(30)
             .to_dict()
         )

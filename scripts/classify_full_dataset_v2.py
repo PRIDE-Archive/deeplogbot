@@ -81,7 +81,7 @@ def main():
         print(f"\nLoaded {len(analysis_df):,} classified locations")
 
         # Extract labels
-        labels = pd.Series('organic', index=analysis_df.index)
+        labels = pd.Series('user', index=analysis_df.index)
         if 'automation_category' in analysis_df.columns:
             labels[analysis_df['automation_category'] == 'bot'] = 'bot'
             labels[analysis_df['automation_category'] == 'legitimate_automation'] = 'hub'
@@ -104,17 +104,17 @@ def main():
             'total_locations': len(analysis_df),
             'bot_locations': int((labels == 'bot').sum()),
             'hub_locations': int((labels == 'hub').sum()),
-            'organic_locations': int((labels == 'organic').sum()),
+            'user_locations': int((labels == 'user').sum()),
         }
 
         if 'total_downloads' in analysis_df.columns:
             summary['total_downloads'] = int(analysis_df['total_downloads'].sum())
             summary['bot_downloads'] = int(analysis_df.loc[labels == 'bot', 'total_downloads'].sum())
             summary['hub_downloads'] = int(analysis_df.loc[labels == 'hub', 'total_downloads'].sum())
-            summary['organic_downloads'] = int(analysis_df.loc[labels == 'organic', 'total_downloads'].sum())
+            summary['user_downloads'] = int(analysis_df.loc[labels == 'user', 'total_downloads'].sum())
             summary['bot_dl_pct'] = summary['bot_downloads'] / summary['total_downloads'] * 100
             summary['hub_dl_pct'] = summary['hub_downloads'] / summary['total_downloads'] * 100
-            summary['organic_dl_pct'] = summary['organic_downloads'] / summary['total_downloads'] * 100
+            summary['user_dl_pct'] = summary['user_downloads'] / summary['total_downloads'] * 100
 
         # Country breakdown
         if 'country' in analysis_df.columns:
@@ -126,12 +126,12 @@ def main():
                     'locations': len(group),
                     'bot_locations': int((gl == 'bot').sum()),
                     'hub_locations': int((gl == 'hub').sum()),
-                    'organic_locations': int((gl == 'organic').sum()),
+                    'user_locations': int((gl == 'user').sum()),
                 }
                 if 'total_downloads' in group.columns:
                     cs['total_downloads'] = int(group['total_downloads'].sum())
                     cs['bot_downloads'] = int(group.loc[gl == 'bot', 'total_downloads'].sum())
-                    cs['organic_downloads'] = int(group.loc[gl == 'organic', 'total_downloads'].sum())
+                    cs['user_downloads'] = int(group.loc[gl == 'user', 'total_downloads'].sum())
                 country_stats.append(cs)
 
             country_df = pd.DataFrame(country_stats).sort_values('total_downloads', ascending=False)
@@ -143,11 +143,11 @@ def main():
         print(f"    Total locations: {summary['total_locations']:,}")
         print(f"    Bot: {summary['bot_locations']:,} ({summary['bot_locations']/summary['total_locations']*100:.1f}%)")
         print(f"    Hub: {summary['hub_locations']:,} ({summary['hub_locations']/summary['total_locations']*100:.1f}%)")
-        print(f"    Organic: {summary['organic_locations']:,} ({summary['organic_locations']/summary['total_locations']*100:.1f}%)")
+        print(f"    User: {summary['user_locations']:,} ({summary['user_locations']/summary['total_locations']*100:.1f}%)")
         if 'total_downloads' in summary:
             print(f"    Bot DL%: {summary['bot_dl_pct']:.1f}%")
             print(f"    Hub DL%: {summary['hub_dl_pct']:.1f}%")
-            print(f"    Organic DL%: {summary['organic_dl_pct']:.1f}%")
+            print(f"    User DL%: {summary['user_dl_pct']:.1f}%")
 
         # Save summary
         with open(OUTPUT_DIR / 'classification_summary.json', 'w') as f:

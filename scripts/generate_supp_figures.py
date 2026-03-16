@@ -38,9 +38,9 @@ plt.rcParams.update({
 })
 
 project_root = Path(__file__).parent.parent
-ANALYSIS_DIR = project_root / 'output' / 'phase6_analysis'
-BENCHMARK_DIR = project_root / 'output' / 'phase4_final_benchmark'
-CLASSIFICATION_DIR = project_root / 'output' / 'phase5_full_classification'
+ANALYSIS_DIR = project_root / 'output' / 'full_deep_v11'
+BENCHMARK_DIR = project_root / 'output' / 'full_deep_v11'
+CLASSIFICATION_DIR = project_root / 'output' / 'full_deep_v11'
 FIGURES_DIR = project_root / 'paper' / 'figures'
 PARQUET_PATH = project_root / 'pride_data' / 'data_downloads_parquet.parquet'
 
@@ -66,7 +66,7 @@ REGION_MAP = {
     'Belgium': 'Europe', 'Finland': 'Europe', 'Norway': 'Europe',
     'Austria': 'Europe', 'Poland': 'Europe', 'Czechia': 'Europe',
     'Portugal': 'Europe', 'Ireland': 'Europe', 'Greece': 'Europe',
-    'Hungary': 'Europe', 'Romania': 'Europe', 'Russia': 'Europe',
+    'Hungary': 'Europe', 'Romania': 'Europe',
     'Turkey': 'Europe', 'Ukraine': 'Europe',
     'Australia': 'Oceania', 'New Zealand': 'Oceania',
     'South Africa': 'Africa', 'Egypt': 'Africa', 'Nigeria': 'Africa',
@@ -83,17 +83,19 @@ EUROPEAN_COUNTRIES = [
 
 def get_filtered_connection():
     """Get DuckDB connection with non-bot location filter set up."""
-    labels_path = CLASSIFICATION_DIR / 'pride_classification_final.csv'
+    labels_path = CLASSIFICATION_DIR / 'location_analysis.csv'
     if not labels_path.exists():
         raise FileNotFoundError(f"Labels not found: {labels_path}")
 
-    labels_df = pd.read_csv(labels_path)
-    if 'final_label' in labels_df.columns:
+    labels_df = pd.read_csv(labels_path, low_memory=False)
+    if 'behavior_type' in labels_df.columns:
+        non_bot = labels_df[labels_df['behavior_type'] != 'bot'][['geo_location']].drop_duplicates()
+    elif 'final_label' in labels_df.columns:
         non_bot = labels_df[labels_df['final_label'] != 'bot'][['geo_location']].drop_duplicates()
     elif 'is_bot' in labels_df.columns:
         non_bot = labels_df[~labels_df['is_bot']][['geo_location']].drop_duplicates()
     else:
-        raise KeyError("No bot label column found (expected 'final_label' or 'is_bot')")
+        raise KeyError("No bot label column found")
 
     conn = duckdb.connect()
     conn.execute("PRAGMA memory_limit='4GB'")
@@ -166,16 +168,33 @@ def supp_fig_bot_removal_geographic(conn, output_dir):
 def supp_fig_classification_distribution(output_dir):
     """Classification distribution: pie + bar."""
     print("  Classification distribution...")
+    csv_path = CLASSIFICATION_DIR / 'location_analysis.csv'
     summary_path = CLASSIFICATION_DIR / 'classification_summary.json'
-    if not summary_path.exists():
+    if summary_path.exists():
+        with open(summary_path) as f:
+            stats = json.load(f)
+    elif csv_path.exists():
+        _df = pd.read_csv(csv_path, usecols=['behavior_type', 'total_downloads'], low_memory=False)
+        total_dl = _df['total_downloads'].sum()
+        bot_dl = _df.loc[_df['behavior_type'] == 'bot', 'total_downloads'].sum()
+        hub_dl = _df.loc[_df['behavior_type'] == 'hub', 'total_downloads'].sum()
+        user_dl = _df.loc[_df['behavior_type'] == 'user', 'total_downloads'].sum()
+        stats = {
+            'organic_locations': int((_df['behavior_type'] == 'user').sum()),
+            'hub_locations': int((_df['behavior_type'] == 'hub').sum()),
+            'bot_locations': int((_df['behavior_type'] == 'bot').sum()),
+            'organic_dl_pct': user_dl / total_dl * 100 if total_dl > 0 else 0,
+            'hub_dl_pct': hub_dl / total_dl * 100 if total_dl > 0 else 0,
+            'bot_dl_pct': bot_dl / total_dl * 100 if total_dl > 0 else 0,
+        }
+        del _df
+    else:
         print("    SKIPPED"); return
-    with open(summary_path) as f:
-        stats = json.load(f)
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
     loc_vals = [stats['organic_locations'], stats['hub_locations'], stats['bot_locations']]
-    loc_labels = [f"Organic\n({stats['organic_locations']:,})",
+    loc_labels = [f"User\n({stats['organic_locations']:,})",
                   f"Hub\n({stats['hub_locations']:,})",
                   f"Bot\n({stats['bot_locations']:,})"]
     colors = [COLORS['organic'], COLORS['hub'], COLORS['bot']]
@@ -185,7 +204,7 @@ def supp_fig_classification_distribution(output_dir):
         t.set_fontsize(10); t.set_fontweight('bold')
     ax1.set_title('A) Locations by Classification')
 
-    dl_cats = ['Organic', 'Hub', 'Bot']
+    dl_cats = ['User', 'Hub', 'Bot']
     dl_vals = [stats['organic_dl_pct'], stats['hub_dl_pct'], stats['bot_dl_pct']]
     bars = ax2.bar(dl_cats, dl_vals, color=colors, edgecolor='black', linewidth=0.5)
     ax2.set_ylabel('Percentage of Total Downloads'); ax2.set_title('B) Download Share by Classification')

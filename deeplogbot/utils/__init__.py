@@ -9,8 +9,8 @@ warnings.filterwarnings('ignore')
 
 # Configure logging with immediate flushing
 # Use DEBUG level by default, or override with environment variable LOG_LEVEL
-log_level = os.getenv('LOG_LEVEL', 'DEBUG').upper()
-log_level = getattr(logging, log_level, logging.DEBUG)
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+log_level = getattr(logging, log_level, logging.INFO)
 
 logging.basicConfig(
     level=log_level,

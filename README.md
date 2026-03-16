@@ -2,60 +2,33 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/deeplogbot)](https://pypi.org/project/deeplogbot/)
 [![Python](https://img.shields.io/pypi/pyversions/deeplogbot)](https://pypi.org/project/deeplogbot/)
-[![Tests](https://github.com/ypriverol/deeplogbot/actions/workflows/tests.yml/badge.svg)](https://github.com/ypriverol/deeplogbot/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![llms.txt](https://img.shields.io/badge/llms.txt-available-blue)](https://github.com/ypriverol/deeplogbot/blob/main/llms.txt)
 
-Bot detection and traffic classification for scientific data repository logs.
+Bot detection and traffic classification for scientific data repository download logs.
 
 ## Overview
 
-DeepLogBot (CLI: `deeplogbot`) detects and classifies download patterns in scientific data repository logs, distinguishing between:
+DeepLogBot classifies download traffic from scientific data repositories into three categories:
 
-- **Organic users** — Human researchers with natural download patterns
-- **Bots** — Automated scrapers, crawlers, and coordinated bot farms
-- **Download hubs** — Legitimate mirrors, institutional pipelines, and data aggregators
+- **Organic users** -- Human researchers with natural download patterns
+- **Bots** -- Automated scrapers, crawlers, and coordinated bot farms
+- **Download hubs** -- Legitimate institutional mirrors, reanalysis pipelines, and data aggregators
 
-Applied to the PRIDE Archive (159M download records), the system identified that **88% of traffic is bot-generated**. After filtering, **19.1M clean downloads** remain across 34,085 datasets and 213 countries.
+Applied to the PRIDE Archive (159M download records, 2021--2025), DeepLogBot classified 71,133 geographic locations with 85.6% accuracy on an independent held-out test set.
 
-### Classification Categories
+## Classification Pipeline
 
-Each geographic location is classified into one of three categories:
+DeepLogBot uses a five-phase semi-supervised pipeline refined by LLM annotations:
 
-- **Bot** — Automated scrapers, crawlers, and coordinated bot farms
-- **Hub** — Legitimate automation: institutional mirrors, CI/CD pipelines, educational workshops
-- **Organic** — Human researchers with natural download patterns
+| Phase | Name | Description |
+|-------|------|-------------|
+| 1 | **Heuristic Seed Selection** | Identifies high-confidence bot/organic/hub seeds using behavioral heuristics (3-tier organic, 6-signal bot, structural hub) |
+| 2 | **LLM Seed Refinement** | Injects LLM-annotated corrections (from `data/llm_corrections.csv`) to fix systematic seed errors |
+| 3 | **Fusion Meta-learner** | GradientBoosting classifier (200 estimators, Platt calibration) trained on 33 behavioral features |
+| 4 | **Hub Protection** | Structural rules prevent institutional locations from being misclassified as bots |
+| 5 | **Finalization** | Insufficient-evidence filter + final boolean labels |
 
-## Classification Methods
-
-DeepLogBot provides **2 classification methods**:
-
-| Method | Macro F1 | Speed | Description |
-|--------|----------|-------|-------------|
-| `rules` | 0.632 | Fast | YAML-configurable thresholds, no training required |
-| `deep` | 0.775 | Medium | Multi-stage learned pipeline with soft priors |
-
-*Benchmarked on a 1M-record sample with manually curated ground truth.*
-
-### Rule-Based (`--classification-method rules`)
-
-Hierarchical threshold classification using YAML-configurable rules. Fast, interpretable, and requires no training. Best for production use with known patterns.
-
-### Deep Architecture (`--classification-method deep`)
-
-Multi-stage learned pipeline:
-
-1. **Seed Selection** — Identify high-confidence bot/organic/hub seeds from feature distributions
-2. **Organic VAE** — Learn the normal-behavior manifold; score reconstruction error
-3. **Deep Isolation Forest** — Non-linear anomaly detection on VAE latent space
-4. **Temporal Consistency** — Modified z-score spike detection (no fixed thresholds)
-5. **Fusion Meta-Learner** — Gradient-boosted combination of all anomaly signals
-
-Additional components:
-- **Soft priors** — Pre-filter signals encoded as continuous features (no hard lockout)
-- **Reconciliation** — Override thresholds for cases where pipeline and pre-filter disagree
-- **Hub protection** — Prevent legitimate automation from being classified as bots
-- **Post-classification** — Hub protection and final label assignment
+The LLM refinement step (Phase 2) improved accuracy from 67.2% to 85.6%, with the largest gains in organic F1 (0.575 to 0.837) and bot F1 (0.684 to 0.874).
 
 ## Installation
 
@@ -66,32 +39,28 @@ pip install -e .
 ### Requirements
 
 - Python 3.9+
-- pandas, numpy, scikit-learn, scipy, duckdb
-- Optional: torch (for deep method)
+- pandas, numpy, scikit-learn, scipy, duckdb, pyyaml
 
 ## Usage
 
 ### Command Line
 
 ```bash
-# Rule-based classification (default)
-deeplogbot -i data.parquet -o output/
-
-# Deep architecture
+# Deep classification (recommended)
 deeplogbot -i data.parquet -o output/ -m deep
+
+# Rule-based classification (faster, no ML training)
+deeplogbot -i data.parquet -o output/ -m rules
 
 # With sampling for large datasets
 deeplogbot -i data.parquet -o output/ -m deep --sample-size 1000000
 ```
-
-**Options:**
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-i, --input` | Input parquet file | Required |
 | `-o, --output-dir` | Output directory | `output/bot_analysis` |
 | `-m, --classification-method` | `rules` or `deep` | `rules` |
-| `-c, --contamination` | Anomaly proportion | `0.15` |
 | `-s, --sample-size` | Sample N records | None (use all) |
 | `-p, --provider` | Log provider | `ebi` |
 
@@ -100,169 +69,90 @@ deeplogbot -i data.parquet -o output/ -m deep --sample-size 1000000
 ```python
 from deeplogbot import run_bot_annotator
 
-# Rule-based classification
-results = run_bot_annotator(
-    input_parquet='data.parquet',
-    output_dir='output/',
-    classification_method='rules'
-)
-
-# Deep architecture
 results = run_bot_annotator(
     input_parquet='data.parquet',
     output_dir='output/',
     classification_method='deep'
 )
-
-print(f"Bots detected: {results['bot_count']}")
-print(f"Hubs detected: {results['hub_count']}")
 ```
+
+### Retraining with LLM corrections
+
+To evaluate the LLM-augmented retraining (baseline vs retrained comparison):
+
+```bash
+python scripts/retrain_with_llm_labels.py
+```
+
+This splits the 1,153 LLM-labeled locations into train/test, runs baseline and LLM-augmented classification, and prints accuracy comparisons.
 
 ## Project Structure
 
 ```
 deeplogbot/
-├── __init__.py                  # Package exports
 ├── main.py                      # CLI entry point and pipeline
 ├── config.py                    # Configuration loading
-├── config.yaml                  # Main configuration file
-│
-├── features/                    # Feature extraction (~117 features)
-│   ├── base.py                  # Base extractor class
-│   ├── schema.py                # Log schema definitions
-│   ├── registry.py              # Feature documentation registry
-│   └── providers/
-│       └── ebi/                 # EBI/PRIDE provider
-│           ├── ebi.py           # Location feature extraction
-│           ├── behavioral.py    # Behavioral features
-│           ├── discriminative.py # Discriminative features
-│           ├── timeseries.py    # Time series features
-│           └── schema.py        # EBI-specific schema
-│
+├── config.yaml                  # Pipeline config (incl. LLM corrections path)
+├── features/                    # Feature extraction
+│   └── providers/ebi/           # EBI/PRIDE-specific extractors
 ├── models/
-│   ├── isoforest/               # Isolation Forest anomaly detection
-│   │   └── models.py
-│   └── classification/          # Classification methods
-│       ├── rules.py             # Rule-based hierarchical classifier
-│       ├── deep_architecture.py # Deep pipeline orchestration
-│       ├── seed_selection.py    # High-confidence seed identification
-│       ├── organic_vae.py       # VAE + Deep Isolation Forest
-│       ├── temporal_consistency.py # Modified z-score spike detection
-│       ├── fusion.py            # Gradient-boosted meta-learner
-│       ├── post_classification.py # Hub protection & label finalization
-│       └── feature_validation.py  # Feature usage validation
-│
+│   └── classification/
+│       ├── deep_architecture.py # 5-phase pipeline orchestrator
+│       ├── seed_selection.py    # Heuristic seed identification
+│       ├── fusion.py            # GradientBoosting meta-learner
+│       ├── post_classification.py # Hub protection & finalization
+│       ├── rules.py             # Rule-based classifier
+│       └── feature_validation.py
 ├── reports/                     # Output generation
-│   ├── reporting.py             # Text report generation
-│   ├── annotation.py            # Parquet annotation
-│   ├── statistics.py            # Summary statistics
-│   ├── html_report.py           # Interactive HTML reports
-│   └── visualizations.py        # Charts and plots
-│
-├── utils/                       # Utilities
-│   └── geography.py             # Geographic lookups
-│
-└── providers/
-    └── base_taxonomy.yaml       # Classification taxonomy
+└── utils/
+
+data/
+└── llm_corrections.csv          # 1,153 LLM-annotated seed corrections
+
+scripts/
+├── classify_full_dataset.py     # Run classification on full dataset
+├── retrain_with_llm_labels.py   # LLM-augmented retraining experiment
+├── run_full_analysis.py         # Analysis pipeline
+├── generate_figures.py          # Main manuscript figures
+└── generate_supp_figures.py     # Supplementary figures
 ```
 
 ## Configuration
 
-Configuration is in `deeplogbot/config.yaml`:
+Main configuration is in `deeplogbot/config.yaml`:
 
 ```yaml
-isolation_forest:
-  contamination: 0.15
-  n_estimators: 200
-  random_state: 42
+# LLM seed corrections (auto-loaded during deep classification)
+llm_corrections:
+  path: "data/llm_corrections.csv"
+  label_column: "claude_evaluation"
+  location_column: "geo_location"
+  weight: 0.95
 
+# Hub protection rules
 classification:
-  rule_based:
-    bots:
-      require_anomaly: true
-      patterns:
-        - downloads_per_user: {max: 100}
-          unique_users: {min: 5000}
-    hubs:
-      require_anomaly: true
-      patterns:
-        - downloads_per_user: {min: 500}
-
-deep_reconciliation:
-  override_threshold: 0.7
-  strict_threshold: 0.8
+  hub_protection:
+    research_institution:
+      max_users: 1000
+      min_downloads_per_user: 200
+      min_years_span: 3
 ```
 
-## Classifying a Download Parquet File
+Set `llm_corrections` to `null` to disable LLM seed injection and use heuristic-only seeds.
 
-Given a parquet file of download logs (one row per download event), DeepLogBot aggregates records by geographic location, extracts ~117 behavioral and discriminative features, classifies each location as bot/hub/organic, and writes a new annotated parquet with classification columns appended to every row.
-
-### Input format
+## Input Format
 
 The input parquet must contain at minimum:
 
 | Column | Description |
 |--------|-------------|
 | `accession` | Dataset accession (e.g., `PXD000001`) |
-| `geo_location` | Geographic location string (city/region) |
-| `country` | Country name or code |
+| `geo_location` | Geographic coordinate string |
+| `country` | Country name |
 | `year` | Download year |
 | `date` | Download date |
 
-### Running classification
-
-```bash
-# Classify with the deep method (recommended) — writes <input>_annotated.parquet
-deeplogbot -i downloads.parquet -o output/ -m deep
-
-# Classify with rules (faster, no torch required)
-deeplogbot -i downloads.parquet -o output/ -m rules
-
-# For large files, sample first to speed up classification
-deeplogbot -i downloads.parquet -o output/ -m deep --sample-size 5000000
-```
-
-The annotated parquet is written to the output directory with an `_annotated` suffix (e.g., `output/downloads_annotated.parquet`). You can also specify an explicit output path:
-
-```bash
-deeplogbot -i downloads.parquet -o output/ -m deep --output output/classified.parquet
-```
-
-### Output strategies
-
-| Strategy | Flag | Behavior |
-|----------|------|----------|
-| `new_file` (default) | `--output-strategy new_file` | Creates `<input>_annotated.parquet` in the output directory |
-| `overwrite` | `--output-strategy overwrite` | Rewrites the original parquet in place |
-| `reports_only` | `--reports-only` | Generates text/HTML reports without writing a parquet |
-
-### Using the annotated parquet
-
-```python
-import duckdb
-
-conn = duckdb.connect()
-df = conn.execute("""
-    SELECT accession, country, year,
-           is_bot, is_hub, is_organic,
-           is_bot, is_hub, is_organic
-    FROM read_parquet('output/downloads_annotated.parquet')
-    LIMIT 10
-""").df()
-
-# Filter to clean (non-bot, non-hub) downloads
-clean = conn.execute("""
-    SELECT accession, country, COUNT(*) as downloads
-    FROM read_parquet('output/downloads_annotated.parquet')
-    WHERE is_bot = false AND is_hub = false
-    GROUP BY accession, country
-    ORDER BY downloads DESC
-""").df()
-```
-
-## Output Format
-
-The annotated output parquet contains:
+## Output
 
 | Column | Description |
 |--------|-------------|
@@ -271,10 +161,7 @@ The annotated output parquet contains:
 | `is_organic` | Organic user classification flag |
 | `classification_confidence` | Confidence score (0-1) |
 
-Reports generated:
-- `bot_detection_report.txt` — Summary with counts and breakdowns
-- `location_analysis.csv` — Per-location features and classifications
-- Interactive HTML report (if enabled)
+Reports generated: `bot_detection_report.txt`, `location_analysis.csv`, and optionally an interactive HTML report.
 
 ## License
 

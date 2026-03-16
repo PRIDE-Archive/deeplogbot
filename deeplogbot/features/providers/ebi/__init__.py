@@ -39,11 +39,9 @@ from .timeseries import (
     ALL_TIMESERIES_FEATURES,
 )
 from .behavioral import (
-    extract_behavioral_features,
     extract_advanced_behavioral_features,
     add_bot_interaction_features,
     add_bot_signature_features,
-    # New behavioral feature functions
     extract_timing_precision_features,
     extract_user_distribution_features,
     extract_session_behavior_features,
@@ -77,8 +75,7 @@ __all__ = [
     "NewBotDetectionFeaturesExtractor",
     "TimeSeriesFeaturesExtractor",
     "TimeWindowExtractor",
-    # Behavioral - existing
-    "extract_behavioral_features",
+    # Behavioral
     "extract_advanced_behavioral_features",
     "add_bot_interaction_features",
     "add_bot_signature_features",

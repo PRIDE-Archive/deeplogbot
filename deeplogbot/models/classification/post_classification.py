@@ -52,19 +52,13 @@ def log_hierarchical_summary(df: pd.DataFrame) -> None:
     logger.info("  HIERARCHICAL CLASSIFICATION SUMMARY")
     logger.info("  " + "=" * 60)
 
-    logger.info("\n  Level 1 – Behaviour Type:")
-    for bt in ['organic', 'automated']:
+    logger.info("\n  Classification:")
+    for bt in ['user', 'bot', 'hub', 'insufficient_evidence']:
         count = (df['behavior_type'] == bt).sum()
         pct = count / total * 100
-        logger.info(f"    {bt.upper()}: {count:,} ({pct:.1f}%)")
-
-    automated_count = (df['behavior_type'] == 'automated').sum()
-    if automated_count > 0:
-        logger.info("\n  Level 2 – Automation Category (within AUTOMATED):")
-        for ac in ['bot', 'legitimate_automation']:
-            count = (df['automation_category'] == ac).sum()
-            pct = count / automated_count * 100
-            logger.info(f"    {ac.upper()}: {count:,} ({pct:.1f}% of automated)")
+        if count > 0:
+            dl = df.loc[df['behavior_type'] == bt, 'total_downloads'].sum() if 'total_downloads' in df.columns else 0
+            logger.info(f"    {bt.upper():25s}: {count:>7,} ({pct:5.1f}%) — {dl:>14,.0f} DL")
 
     # Final category counts
     if 'is_bot' in df.columns:
@@ -93,10 +87,6 @@ def apply_hub_protection(df: pd.DataFrame) -> pd.DataFrame:
     definite_hub_mask = pd.Series(False, index=df.index)
 
     if _has_required_columns(df, 'downloads_per_user', 'unique_users'):
-        high_dl_rule = hub_rules.get('high_dl_per_user', {})
-        few_users_rule = hub_rules.get('few_users_high_dl', {})
-        single_user_rule = hub_rules.get('single_user', {})
-        very_few_rule = hub_rules.get('very_few_users', {})
         behavioral_rules = hub_rules.get('behavioral_exclusion', {})
 
         # Behavioural exclusion: don't protect if clearly bot-like
@@ -107,31 +97,32 @@ def apply_hub_protection(df: pd.DataFrame) -> pd.DataFrame:
                 (df['night_activity_ratio'] > behavioral_rules.get('min_night_activity_ratio', 0.7))
             )
 
-        # Scraper exclusion
-        scraper_exclusion = pd.Series(False, index=df.index)
-        if 'unique_projects' in df.columns:
-            scraper_exclusion = df['unique_projects'] > 15000
+        # High single-project concentration exclusion: locations where >80%
+        # of downloads come from one project are CI/CD, not legitimate hubs
+        concentration_exclusion = pd.Series(False, index=df.index)
+        if 'top_project_concentration' in df.columns:
+            concentration_exclusion = df['top_project_concentration'] > 0.8
 
-        # Protocol-based hub detection
+        # Rule 1: Protocol-based hub detection (aspera/globus = institutional tools)
         protocol_hub = pd.Series(False, index=df.index)
         if _has_required_columns(df, 'aspera_ratio', 'globus_ratio'):
             protocol_hub = (df['aspera_ratio'] > 0.3) | (df['globus_ratio'] > 0.1)
 
+        # Rule 2: Extreme mirrors — very high DL/user with few users
+        high_dl_rule = hub_rules.get('high_dl_per_user', {})
+        extreme_mirror = (
+            (df['downloads_per_user'] > high_dl_rule.get('min_downloads_per_user', 500)) &
+            (df['unique_users'] <= high_dl_rule.get('max_users', 200))
+        )
+
+        # Combine: protocol hubs + extreme mirrors, excluding bot-like and CI/CD
         definite_hub_mask = (
-            ((df['downloads_per_user'] > high_dl_rule.get('min_downloads_per_user', 500)) &
-             (df['unique_users'] <= high_dl_rule.get('max_users', 200))) |
-            ((df['unique_users'] <= few_users_rule.get('max_users', 100)) &
-             (df['downloads_per_user'] > few_users_rule.get('min_downloads_per_user', 100))) |
-            ((df['unique_users'] <= single_user_rule.get('max_users', 1)) &
-             (df['downloads_per_user'] > single_user_rule.get('min_downloads_per_user', 50))) |
-            ((df['unique_users'] <= very_few_rule.get('max_users', 10)) &
-             (df['downloads_per_user'] > very_few_rule.get('min_downloads_per_user', 200))) |
-            protocol_hub
-        ) & ~behavioral_exclusion & ~scraper_exclusion
+            protocol_hub | extreme_mirror
+        ) & ~behavioral_exclusion & ~concentration_exclusion
 
     df.loc[definite_hub_mask, 'is_protected_hub'] = True
     df.loc[definite_hub_mask, 'is_bot_neural'] = False
-    df.loc[definite_hub_mask, 'behavior_type'] = 'automated'
+    df.loc[definite_hub_mask, 'behavior_type'] = 'hub'
     df.loc[definite_hub_mask, 'automation_category'] = 'legitimate_automation'
     if 'user_category' in df.columns:
         df.loc[definite_hub_mask & (df['user_category'] == 'bot'), 'user_category'] = 'download_hub'
@@ -139,6 +130,47 @@ def apply_hub_protection(df: pd.DataFrame) -> pd.DataFrame:
     n_protected = definite_hub_mask.sum()
     if n_protected > 0:
         logger.info(f"    Hub protection: {n_protected:,} locations protected")
+
+    # ------------------------------------------------------------------
+    # Suspicious hub demotion: reclassify "hubs" with concentrated project
+    # downloads as bots. Legitimate mirrors download broadly; locations
+    # where a few projects dominate traffic are scrapers or CI/CD, not hubs.
+    # ------------------------------------------------------------------
+    hub_mask = df['behavior_type'] == 'hub'
+    suspicious_hub = pd.Series(False, index=df.index)
+
+    if _has_required_columns(df, 'top3_project_concentration', 'project_hhi'):
+        # Standard threshold: top-3 projects > 50% AND HHI > 0.05
+        standard_suspicious = (
+            hub_mask &
+            (df['top3_project_concentration'] > 0.5) &
+            (df['project_hhi'] > 0.05)
+        )
+        # Volume-aware threshold: for high-volume locations (>100K downloads),
+        # lower the bar to 45% — concentrated downloads at massive scale
+        # are inconsistent with legitimate mirroring behavior
+        high_volume_suspicious = pd.Series(False, index=df.index)
+        if 'total_downloads' in df.columns:
+            high_volume_suspicious = (
+                hub_mask &
+                (df['total_downloads'] > 100_000) &
+                (df['top3_project_concentration'] > 0.45) &
+                (df['project_hhi'] > 0.05)
+            )
+        suspicious_hub = standard_suspicious | high_volume_suspicious
+    elif _has_required_columns(df, 'top3_project_concentration'):
+        suspicious_hub = hub_mask & (df['top3_project_concentration'] > 0.5)
+
+    n_demoted = suspicious_hub.sum()
+    if n_demoted > 0:
+        df.loc[suspicious_hub, 'behavior_type'] = 'bot'
+        df.loc[suspicious_hub, 'automation_category'] = 'bot'
+        df.loc[suspicious_hub, 'is_bot_neural'] = True
+        df.loc[suspicious_hub, 'is_protected_hub'] = False
+        if 'user_category' in df.columns:
+            df.loc[suspicious_hub, 'user_category'] = 'bot'
+        logger.info(f"    Suspicious hub demotion: {n_demoted:,} hubs → bot "
+                    f"(concentrated project downloads)")
 
     return df
 

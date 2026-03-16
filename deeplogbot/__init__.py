@@ -1,5 +1,5 @@
 """
-DeepLogBot: A hybrid Isolation Forest-based system for detecting bot behavior in log data.
+DeepLogBot: A system for detecting bot behavior in log data.
 
 This package provides tools for detecting bots and download hubs in log data,
 with support for multiple log providers and extensible classification rules.
@@ -35,8 +35,7 @@ from .main import run_bot_annotator
 from .models import (
     train_isolation_forest,
     compute_feature_importances,
-    classify_locations,
-    classify_locations_hierarchical
+    classify_locations_hierarchical,
 )
 from .features import (
     extract_location_features,
@@ -64,7 +63,6 @@ __all__ = [
     # Models
     "train_isolation_forest",
     "compute_feature_importances",
-    "classify_locations",
     "classify_locations_hierarchical",
     # Feature extraction
     "extract_location_features",

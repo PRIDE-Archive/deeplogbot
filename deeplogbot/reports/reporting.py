@@ -84,12 +84,12 @@ class ReportGenerator:
             f.write("  - Geographic features (country-level patterns)\n")
             f.write("  Classes: BOT (0), DOWNLOAD_HUB (1), NORMAL (2)\n\n")
         elif classification_method.lower() == 'deep':
-            f.write("Classification method: Deep Architecture (Isolation Forest + Transformers)\n")
+            f.write("Classification method: Deep Architecture (Seed → Fusion → Hub Protection)\n")
             f.write("  This method combines:\n")
-            f.write("    - Isolation Forest for initial anomaly detection.\n")
-            f.write("    - Transformer for sequence-based feature encoding (time-series + fixed features).\n")
-            f.write("    - Rule-based classification using Transformer embeddings and original features.\n")
-            f.write("  Categories: BOT, DOWNLOAD_HUB, INDEPENDENT_USER, NORMAL, OTHER\n\n")
+            f.write("    - Seed selection for high-confidence training examples.\n")
+            f.write("    - Gradient-boosted fusion meta-learner with Platt-calibrated probabilities.\n")
+            f.write("    - Hub protection (structural override for institutional mirrors).\n")
+            f.write("  Categories: BOT, DOWNLOAD_HUB, USER, INSUFFICIENT_EVIDENCE\n\n")
         else:
             f.write("Classification method: Rule-based\n")
             f.write("Classification rules:\n")
@@ -112,7 +112,8 @@ class ReportGenerator:
         f.write("SUMMARY STATISTICS\n")
         f.write("=" * 80 + "\n")
         f.write(f"Total locations analyzed: {len(df):,}\n")
-        f.write(f"Anomalous locations: {df['is_anomaly'].sum():,}\n")
+        if 'is_anomaly' in df.columns:
+            f.write(f"Anomalous locations: {df['is_anomaly'].sum():,}\n")
         f.write(f"Bot locations: {len(bot_locs):,}\n")
         f.write(f"Download hub locations: {len(hub_locs):,}\n")
         f.write(f"Independent user locations: {len(independent_user_locs):,}\n")
@@ -127,38 +128,6 @@ class ReportGenerator:
         other_val = stats.get('other', stats.get('other_downloads', 0))
         if other_val > 0:
             f.write(f"Other/Unclassified downloads: {format_number(other_val)} ({other_val/stats['total']*100:.2f}%)\n")    
-
-    def _write_cluster_details(self, f, cluster_df: pd.DataFrame):
-        """Write detailed information about clusters (if available)."""
-        # Note: Deep architecture no longer uses DBSCAN clustering
-        # This method is kept for compatibility but will be empty for deep method
-        if cluster_df is not None and not cluster_df.empty:
-            f.write("\n" + "=" * 80 + "\n")
-            f.write("CLUSTER DETAILS\n")
-            f.write("=" * 80 + "\n")
-            f.write("Note: Deep architecture uses Transformer embeddings for direct classification,\n")
-            f.write("not clustering. Cluster information is not available.\n\n")
-
-    def _write_transformer_explanation(self, f, classification_method: str):
-        """Write a section explaining the Transformer architecture."""
-        if classification_method.lower() == 'deep':
-            f.write("\n" + "=" * 80 + "\n")
-            f.write("TRANSFORMER ARCHITECTURE EXPLANATION (Deep Method)\n")
-            f.write("=" * 80 + "\n")
-            f.write("The Deep Classification method leverages a Transformer Encoder to process \n")
-            f.write("time-series features for each geo-location. This architecture is particularly \n")
-            f.write("beneficial because it can capture temporal dependencies and patterns in \n")
-            f.write("the sequence of downloads over time. By considering not just static features \n")
-            f.write("but also the *order* and *evolution* of downloads, the Transformer can build \n")
-            f.write("richer representations of each location's behavior. This allows for: \n")
-            f.write("  - Detecting subtle shifts in download patterns that might indicate bot activity.\n")
-            f.write("  - Distinguishing between legitimate, evolving user behavior and static, \n")
-            f.write("    anomalous patterns.\n")
-            f.write("  - Providing rich embeddings that capture temporal patterns for direct classification.\n")
-            f.write("    The Transformer embeddings are combined with fixed features and used with\n")
-            f.write("    rule-based thresholds for classification, eliminating the need for clustering.\n")
-            f.write("The Transformer uses various aggregated time-windowed features (e.g., downloads, \n")
-            f.write("unique users, downloads per user per month/week) as its input sequence.\n\n")
 
     def _write_city_level_aggregation(self, f, df: pd.DataFrame, city_field: str = 'city'):
         """Write city-level aggregation section."""
@@ -407,16 +376,11 @@ class ReportGenerator:
             
             f.write("METHODOLOGY\n")
             f.write("-" * 60 + "\n")
-            f.write("Algorithm: Isolation Forest anomaly detection + hierarchical classification\n\n")
+            f.write("Algorithm: Behavioral feature analysis + hierarchical classification\n\n")
             self._write_feature_list(f, available_features)
             self._write_classification_rules(f, classification_method)
-            self._write_transformer_explanation(f, classification_method) # New call here
-            
+
             self._write_summary_stats(f, df, bot_locs, hub_locs, independent_user_locs, other_locs, stats)
-            
-            if classification_method.lower() == 'deep':
-                if cluster_df is not None and not cluster_df.empty:
-                    self._write_cluster_details(f, cluster_df)
 
             # Write hierarchical classification summary (new taxonomy)
             self._write_hierarchical_classification_summary(f, df)

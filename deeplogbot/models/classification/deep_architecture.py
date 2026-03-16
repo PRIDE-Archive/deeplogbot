@@ -60,7 +60,8 @@ BEHAVIORAL_FEATURE_COLS = [
     'single_download_user_ratio', 'power_user_ratio',
     'session_duration_cv', 'inter_session_regularity',
     'momentum_score', 'recent_activity_ratio',
-    'unique_projects',
+    'unique_projects', 'top_project_concentration',
+    'top3_project_concentration', 'project_hhi',
 ]
 
 
@@ -275,10 +276,9 @@ def classify_locations_deep(
     # Build feature matrix for ALL locations
     # ------------------------------------------------------------------
     available_behavioral = [c for c in BEHAVIORAL_FEATURE_COLS if c in df.columns]
-    extra = [c for c in feature_columns
-             if c in df.columns and c not in available_behavioral
-             and c != 'time_series_features_present']
-    all_feature_cols = list(dict.fromkeys(available_behavioral + extra))
+    # Only use BEHAVIORAL_FEATURE_COLS — do NOT add extra columns which may
+    # include classification outputs (prob_bot, is_bot, etc.) causing circularity.
+    all_feature_cols = available_behavioral
     logger.info(f"    Using {len(all_feature_cols)} behavioural features")
 
     X_fusion_all = prepare_fusion_features(df, behavioral_cols=all_feature_cols)
@@ -331,6 +331,50 @@ def classify_locations_deep(
         logger.info("\n  Phase 2: Training gold-standard meta-learner ...")
         X_train = X_fusion_all[train_indices]
         meta_model, meta_scaler = train_meta_learner_gold_standard(X_train, train_labels)
+
+        # Evaluate on held-out test split
+        test_gs = gs_df[gs_df[split_col] == 'test']
+        test_indices, test_labels = [], []
+        for _, row in test_gs.iterrows():
+            loc_idx = geo_to_idx.get(row[loc_col])
+            if loc_idx is not None:
+                test_indices.append(df.index.get_loc(loc_idx))
+                test_labels.append(label_map[row[label_col]])
+
+        if test_indices:
+            test_indices = np.array(test_indices)
+            test_labels = np.array(test_labels)
+            X_test = X_fusion_all[test_indices]
+            test_preds, test_conf, _ = predict_with_confidence(
+                meta_model, meta_scaler, X_test)
+
+            from sklearn.metrics import accuracy_score, classification_report
+            test_acc = accuracy_score(test_labels, test_preds)
+            logger.info(f"\n  Test-split evaluation ({len(test_labels)} samples):")
+            logger.info(f"    Accuracy: {test_acc:.1%}")
+            target_names = ['organic', 'bot', 'hub']
+            report = classification_report(
+                test_labels, test_preds, target_names=target_names,
+                digits=3, zero_division=0)
+            for line in report.strip().split('\n'):
+                logger.info(f"    {line}")
+
+            # Save evaluation results
+            if feature_importance_output_dir:
+                os.makedirs(feature_importance_output_dir, exist_ok=True)
+                eval_results = {
+                    'test_accuracy': float(test_acc),
+                    'test_samples': len(test_labels),
+                    'per_class': {
+                        'bot': int((test_labels == LABEL_BOT).sum()),
+                        'hub': int((test_labels == LABEL_HUB).sum()),
+                        'organic': int((test_labels == LABEL_ORGANIC).sum()),
+                    }
+                }
+                import json
+                with open(os.path.join(feature_importance_output_dir,
+                                       'test_evaluation.json'), 'w') as f:
+                    json.dump(eval_results, f, indent=2)
 
     else:
         # ============================================================

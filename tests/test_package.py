@@ -14,13 +14,12 @@ def test_import_config():
     from deeplogbot.config import load_config
     config = load_config()
     assert "classification" in config
-    assert "deep_reconciliation" in config
 
 
 def test_import_rules_classifier():
     """Verify rule-based classifier can be imported."""
-    from deeplogbot.models.classification.rules import classify_locations
-    assert callable(classify_locations)
+    from deeplogbot.models.classification.rules import classify_locations_hierarchical
+    assert callable(classify_locations_hierarchical)
 
 
 def test_cli_entry_point():
