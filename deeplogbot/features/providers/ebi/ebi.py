@@ -806,14 +806,14 @@ def _extract_location_features_core(
         """
         top_proj_df = conn.execute(top_proj_query).df()
         df = df.merge(top_proj_df, on='geo_location', how='left')
-        df['top_project_concentration'] = df['top_project_concentration'].fillna(1.0)
-        df['top3_project_concentration'] = df['top3_project_concentration'].fillna(1.0)
-        df['project_hhi'] = df['project_hhi'].fillna(1.0)
+        df['top_project_concentration'] = df['top_project_concentration'].fillna(0.0)
+        df['top3_project_concentration'] = df['top3_project_concentration'].fillna(0.0)
+        df['project_hhi'] = df['project_hhi'].fillna(0.0)
     else:
         df['projects_per_user'] = 0
-        df['top_project_concentration'] = 1.0
-        df['top3_project_concentration'] = 1.0
-        df['project_hhi'] = 1.0
+        df['top_project_concentration'] = 0.0
+        df['top3_project_concentration'] = 0.0
+        df['project_hhi'] = 0.0
 
     # Step 3: Apply feature extractors
     logger.info("  Step 3/4: Applying feature extractors...")

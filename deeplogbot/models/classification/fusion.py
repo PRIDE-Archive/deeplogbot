@@ -10,6 +10,7 @@ import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +56,7 @@ def train_meta_learner(X_train: np.ndarray, y_train: np.ndarray,
         (calibrated_model, scaler) tuple
     """
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_train)
-
-    # Handle NaN/inf
-    X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
+    X_clean = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
 
     base_model = GradientBoostingClassifier(
         n_estimators=200,
@@ -68,17 +66,21 @@ def train_meta_learner(X_train: np.ndarray, y_train: np.ndarray,
         min_samples_leaf=10,
         random_state=42,
     )
-    base_model.fit(X_scaled, y_train, sample_weight=weights)
 
-    # Calibrate probabilities (Platt scaling with proper CV to avoid leakage)
+    # Wrap scaler + model in Pipeline so CalibratedClassifierCV
+    # re-fits the scaler inside each CV fold, avoiding data leakage
+    pipe = Pipeline([('scaler', scaler), ('clf', base_model)])
+    pipe.fit(X_clean, y_train, clf__sample_weight=weights)
+
+    # Calibrate probabilities (Platt scaling with proper CV)
     try:
-        calibrated = CalibratedClassifierCV(base_model, cv=5, method='sigmoid')
-        calibrated.fit(X_scaled, y_train, sample_weight=weights)
+        calibrated = CalibratedClassifierCV(pipe, cv=5, method='sigmoid')
+        calibrated.fit(X_clean, y_train)
         logger.info("  Meta-learner trained with Platt calibration (cv=5)")
-        return calibrated, scaler
+        return calibrated, None
     except Exception as e:
         logger.warning(f"  Calibration failed ({e}), using uncalibrated model")
-        return base_model, scaler
+        return pipe, None
 
 
 def predict_with_confidence(model, scaler: StandardScaler,
@@ -96,15 +98,16 @@ def predict_with_confidence(model, scaler: StandardScaler,
           confidences: (n_samples,) confidence of the prediction (0-1)
           probabilities: (n_samples, 3) class probabilities
     """
-    X_scaled = scaler.transform(X)
-    X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
+    X_clean = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+    if scaler is not None:
+        X_clean = scaler.transform(X_clean)
 
-    probas = model.predict_proba(X_scaled)
+    probas = model.predict_proba(X_clean)
 
     # Ensure all 3 classes are represented in output
     if probas.shape[1] < 3:
         # Pad with zeros for missing classes
-        full_probas = np.zeros((len(X_scaled), 3))
+        full_probas = np.zeros((len(X_clean), 3))
         classes = model.classes_ if hasattr(model, 'classes_') else np.arange(probas.shape[1])
         for i, c in enumerate(classes):
             if c < 3:
@@ -127,12 +130,16 @@ def get_feature_importances(model, feature_names: list = None) -> pd.DataFrame:
     Returns:
         DataFrame with feature importance rankings
     """
-    # Unwrap CalibratedClassifierCV if needed
+    # Unwrap CalibratedClassifierCV / Pipeline if needed
     base = model
     if hasattr(model, 'estimator'):
         base = model.estimator
     elif hasattr(model, 'calibrated_classifiers_'):
         base = model.calibrated_classifiers_[0].estimator
+
+    # Unwrap Pipeline to get the classifier step
+    if hasattr(base, 'named_steps'):
+        base = base.named_steps.get('clf', base)
 
     if not hasattr(base, 'feature_importances_'):
         logger.warning("Model does not support feature importances")
@@ -167,9 +174,7 @@ def train_meta_learner_gold_standard(X_train: np.ndarray,
     """
     from sklearn.utils.class_weight import compute_class_weight
 
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_train)
-    X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
+    X_clean = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
 
     # Compute balanced class weights
     classes = np.unique(y_train)
@@ -179,6 +184,7 @@ def train_meta_learner_gold_standard(X_train: np.ndarray,
 
     logger.info(f"  Class weights: {', '.join(f'{LABEL_NAMES.get(c, c)}={w:.3f}' for c, w in weight_map.items())}")
 
+    scaler = StandardScaler()
     base_model = GradientBoostingClassifier(
         n_estimators=200,
         max_depth=5,
@@ -187,14 +193,18 @@ def train_meta_learner_gold_standard(X_train: np.ndarray,
         min_samples_leaf=10,
         random_state=42,
     )
-    base_model.fit(X_scaled, y_train, sample_weight=sample_weights)
 
-    # Calibrate probabilities (Platt scaling with proper CV to avoid leakage)
+    # Wrap scaler + model in Pipeline so CalibratedClassifierCV
+    # re-fits the scaler inside each CV fold, avoiding data leakage
+    pipe = Pipeline([('scaler', scaler), ('clf', base_model)])
+    pipe.fit(X_clean, y_train, clf__sample_weight=sample_weights)
+
+    # Calibrate probabilities (Platt scaling with proper CV)
     try:
-        calibrated = CalibratedClassifierCV(base_model, cv=5, method='sigmoid')
-        calibrated.fit(X_scaled, y_train, sample_weight=sample_weights)
+        calibrated = CalibratedClassifierCV(pipe, cv=5, method='sigmoid')
+        calibrated.fit(X_clean, y_train)
         logger.info("  Gold-standard meta-learner trained with Platt calibration (cv=5)")
-        return calibrated, scaler
+        return calibrated, None
     except Exception as e:
         logger.warning(f"  Calibration failed ({e}), using uncalibrated model")
-        return base_model, scaler
+        return pipe, None

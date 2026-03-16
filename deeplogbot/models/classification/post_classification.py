@@ -125,7 +125,7 @@ def apply_hub_protection(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[definite_hub_mask, 'behavior_type'] = 'hub'
     df.loc[definite_hub_mask, 'automation_category'] = 'legitimate_automation'
     if 'user_category' in df.columns:
-        df.loc[definite_hub_mask & (df['user_category'] == 'bot'), 'user_category'] = 'download_hub'
+        df.loc[definite_hub_mask, 'user_category'] = 'download_hub'
 
     n_protected = definite_hub_mask.sum()
     if n_protected > 0:

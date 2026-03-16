@@ -53,7 +53,7 @@ def test_train_meta_learner_gold_standard():
     model, scaler = train_meta_learner_gold_standard(X, y)
 
     assert model is not None
-    assert scaler is not None
+    # scaler is None when embedded in Pipeline (avoids calibration leakage)
 
     # Predict on training data — should get most right
     labels, confidences, probas = predict_with_confidence(model, scaler, X)

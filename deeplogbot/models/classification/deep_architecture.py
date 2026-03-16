@@ -302,8 +302,24 @@ def classify_locations_deep(
         label_col = gs_cfg.get('label_column', 'label')
         split_col = gs_cfg.get('split_column', 'split')
 
-        # Match gold-standard locations to df indices
+        # Validate required columns exist
+        for col in [loc_col, label_col, split_col]:
+            if col not in gs_df.columns:
+                raise ValueError(
+                    f"Gold standard file missing required column '{col}'. "
+                    f"Available columns: {list(gs_df.columns)}"
+                )
+
+        # Validate labels
         label_map = {'bot': LABEL_BOT, 'hub': LABEL_HUB, 'organic': LABEL_ORGANIC}
+        invalid_labels = set(gs_df[label_col].unique()) - set(label_map.keys())
+        if invalid_labels:
+            raise ValueError(
+                f"Gold standard contains invalid labels: {invalid_labels}. "
+                f"Expected: {list(label_map.keys())}"
+            )
+
+        # Match gold-standard locations to df indices
         train_gs = gs_df[gs_df[split_col] == 'train']
 
         geo_to_idx = {}
@@ -318,6 +334,12 @@ def classify_locations_deep(
             if loc_idx is not None:
                 train_indices.append(df.index.get_loc(loc_idx))
                 train_labels.append(label_map[row[label_col]])
+
+        if not train_indices:
+            raise ValueError(
+                f"No gold-standard training locations matched the feature data. "
+                f"Check that '{loc_col}' values in the gold-standard file match the data."
+            )
 
         train_indices = np.array(train_indices)
         train_labels = np.array(train_labels)
