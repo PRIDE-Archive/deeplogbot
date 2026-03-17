@@ -17,8 +17,8 @@ def test_import_config():
 
 
 def test_import_rules_classifier():
-    """Verify rule-based classifier can be imported."""
-    from deeplogbot.models.classification.rules import classify_locations_hierarchical
+    """Verify rule-based classifier can be imported via public API."""
+    from deeplogbot import classify_locations_hierarchical
     assert callable(classify_locations_hierarchical)
 
 

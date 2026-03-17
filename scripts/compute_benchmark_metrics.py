@@ -33,14 +33,17 @@ METHOD_DIRS = {
 
 def get_classification_from_analysis(df: pd.DataFrame) -> pd.Series:
     """Extract a unified 3-class label from analysis DataFrame."""
-    labels = pd.Series('user', index=df.index)
+    labels = pd.Series(pd.NA, index=df.index, dtype='string')
+
+    # Assign from most general to most specific (later overrides earlier)
+    if 'behavior_type' in df.columns:
+        labels[df['behavior_type'] == 'user'] = 'user'
+        labels[df['behavior_type'] == 'hub'] = 'hub'
+        labels[df['behavior_type'] == 'bot'] = 'bot'
 
     if 'automation_category' in df.columns:
         labels[df['automation_category'] == 'bot'] = 'bot'
         labels[df['automation_category'] == 'legitimate_automation'] = 'hub'
-
-    if 'behavior_type' in df.columns:
-        labels[df['behavior_type'] == 'hub'] = 'hub'
 
     if 'is_bot' in df.columns:
         bot_mask = df['is_bot'].fillna(False).astype(bool)
@@ -48,6 +51,14 @@ def get_classification_from_analysis(df: pd.DataFrame) -> pd.Series:
     if 'is_download_hub' in df.columns:
         hub_mask = df['is_download_hub'].fillna(False).astype(bool)
         labels[hub_mask & (labels != 'bot')] = 'hub'
+
+    # Default remaining unlabeled to 'user' only if they have explicit evidence
+    if 'is_organic' in df.columns:
+        organic_mask = df['is_organic'].fillna(False).astype(bool)
+        labels[organic_mask & labels.isna()] = 'user'
+
+    # Anything still unlabeled defaults to 'user'
+    labels[labels.isna()] = 'user'
 
     return labels
 

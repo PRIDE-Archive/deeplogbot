@@ -40,24 +40,36 @@ def format_location(row: pd.Series, enrichment: dict) -> str:
         f"Research context for {city}, {country}: No enrichment data available."
     )
 
+    def _safe_int(val, default=0):
+        try:
+            return int(val) if pd.notna(val) else default
+        except (ValueError, TypeError):
+            return default
+
+    def _safe_float(val, fmt='.1f', default=0.0):
+        try:
+            return format(float(val), fmt) if pd.notna(val) else format(default, fmt)
+        except (ValueError, TypeError):
+            return format(default, fmt)
+
     return f"""### Location: {row['geo_location']}
 - City: {city}
 - Country: {country}
 - Coordinates: {row['geo_location']}
-- Unique users: {int(row['unique_users'])}
-- Downloads per user: {row['downloads_per_user']:.1f}
-- Total downloads: {int(row['total_downloads']):,}
-- Unique PRIDE datasets accessed: {int(row['unique_projects'])}
-- Working hours ratio (9am-6pm local): {row['working_hours_ratio']:.2f}
-- Night activity ratio (midnight-6am local): {row['night_activity_ratio']:.2f}
-- Hourly entropy (0=concentrated, 3.18=uniform): {row['hourly_entropy']:.2f}
-- Years with activity: {int(row['years_span'])}
-- Fraction in latest year: {row['fraction_latest_year']:.2f}
-- Spike ratio: {row['spike_ratio']:.1f}
-- Aspera share: {row['aspera_ratio']:.3f}
-- Globus share: {row['globus_ratio']:.3f}
-- User entropy: {row['user_entropy']:.2f}
-- User Gini: {row['user_gini_coefficient']:.2f}
+- Unique users: {_safe_int(row.get('unique_users'))}
+- Downloads per user: {_safe_float(row.get('downloads_per_user'), '.1f')}
+- Total downloads: {_safe_int(row.get('total_downloads')):,}
+- Unique PRIDE datasets accessed: {_safe_int(row.get('unique_projects'))}
+- Working hours ratio (9am-6pm local): {_safe_float(row.get('working_hours_ratio'), '.2f')}
+- Night activity ratio (midnight-6am local): {_safe_float(row.get('night_activity_ratio'), '.2f')}
+- Hourly entropy (0=concentrated, 3.18=uniform): {_safe_float(row.get('hourly_entropy'), '.2f')}
+- Years with activity: {_safe_int(row.get('years_span'))}
+- Fraction in latest year: {_safe_float(row.get('fraction_latest_year'), '.2f')}
+- Spike ratio: {_safe_float(row.get('spike_ratio'), '.1f')}
+- Aspera share: {_safe_float(row.get('aspera_ratio'), '.3f')}
+- Globus share: {_safe_float(row.get('globus_ratio'), '.3f')}
+- User entropy: {_safe_float(row.get('user_entropy'), '.2f')}
+- User Gini: {_safe_float(row.get('user_gini_coefficient'), '.2f')}
 {enrichment_text}
 """
 

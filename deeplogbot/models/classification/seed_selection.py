@@ -209,8 +209,15 @@ def select_bot_seed(df: pd.DataFrame) -> pd.DataFrame:
     if has('unique_users'):
         bot_df.loc[bot_df['unique_users'] > 10000, 'seed_confidence'] = 0.9
     bot_df.loc[bot_farm[bot_mask].values & nocturnal[bot_mask].values, 'seed_confidence'] = 0.95
-    # Distributed bots get moderate confidence (pattern is strong but individual signals are weaker)
-    bot_df.loc[distributed_bot[bot_mask].values & ~bot_farm[bot_mask].values, 'seed_confidence'] = 0.6
+    # Pure distributed bots (no stronger signal) get moderate confidence
+    pure_distributed = (
+        distributed_bot[bot_mask].values
+        & ~bot_farm[bot_mask].values
+        & ~nocturnal[bot_mask].values
+        & ~coordinated[bot_mask].values
+        & ~scraper[bot_mask].values
+    )
+    bot_df.loc[pure_distributed, 'seed_confidence'] = 0.6
 
     logger.info(f"Bot seed: {(bot_farm & volume_filter & ~hub_like).sum()} bot farm, "
                 f"{(distributed_bot & volume_filter & ~hub_like).sum()} distributed, "

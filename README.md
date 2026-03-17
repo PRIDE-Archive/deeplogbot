@@ -76,7 +76,7 @@ results = run_bot_annotator(
 
 ## Project Structure
 
-```
+```text
 deeplogbot/
 ├── main.py                      # CLI entry point and pipeline
 ├── config.py                    # Configuration loading

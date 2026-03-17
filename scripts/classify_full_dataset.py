@@ -242,6 +242,20 @@ def generate_classification_summary(
             .to_dict()
         )
 
+    # Backward-compatible flat keys for downstream scripts (generate_figures, etc.)
+    cls = summary['classification']
+    summary['organic_locations'] = cls['user']['locations']
+    summary['organic_downloads'] = cls['user']['downloads']
+    summary['organic_dl_pct'] = cls['user']['downloads_pct']
+    summary['bot_locations'] = cls['bot']['locations']
+    summary['bot_downloads'] = cls['bot']['downloads']
+    summary['bot_dl_pct'] = cls['bot']['downloads_pct']
+    summary['hub_locations'] = cls['hub']['locations']
+    summary['hub_downloads'] = cls['hub']['downloads']
+    summary['hub_dl_pct'] = cls['hub']['downloads_pct']
+    if 'user_by_country' in summary:
+        summary['organic_by_country'] = summary['user_by_country']
+
     summary_file = os.path.join(summary_dir, 'classification_summary.json')
     with open(summary_file, 'w') as f:
         json.dump(summary, f, indent=2, default=str)

@@ -17,7 +17,7 @@ You are an expert in bioinformatics data repository traffic analysis. Your task 
 - Located at known research institutions or universities
 - Systematic but purposeful access patterns
 
-**organic** — Individual researchers or research groups downloading data for their work. Typical signatures:
+**user** — Individual researchers or research groups downloading data for their work. Typical signatures:
 - Small number of users (<50) with moderate downloads per user
 - Working-hours activity pattern (working_hours_ratio > 0.3)
 - Accessing a focused set of datasets relevant to their research
@@ -30,11 +30,11 @@ You are an expert in bioinformatics data repository traffic analysis. Your task 
 - Aspera and Globus protocols require institutional setup; their presence strongly indicates institutional infrastructure
 - Some locations are ambiguous. When uncertain, consider the geographic context and the overall pattern of features together
 - A location in a major research city can still be a bot (VPNs, cloud proxies)
-- A location in a non-research area can still be organic (remote researchers)
+- A location in a non-research area can still be user (remote researchers)
 
 ## Output Format
 For each location, respond with EXACTLY this format:
 
-LABEL: [bot|hub|organic]
+LABEL: [bot|hub|user]
 CONFIDENCE: [high|medium|low]
 REASONING: [2-3 sentences explaining your classification logic]

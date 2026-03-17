@@ -836,13 +836,14 @@ def figure_5_concentration(output_dir):
 
     # ---- Panel B: Top 20 datasets horizontal bar ----
     top20 = top_all.nlargest(20, 'total_downloads')
+    n_rows = len(top20)
     accessions = top20['accession'].values
     dl_vals = top20['total_downloads'].values
-    n_countries = top20['unique_countries'].values if 'unique_countries' in top20.columns else [0] * 20
+    n_countries = top20['unique_countries'].values if 'unique_countries' in top20.columns else [0] * n_rows
 
-    colors = plt.cm.viridis(np.linspace(0.3, 0.9, 20))
-    bars = ax2.barh(range(20), dl_vals, color=colors, edgecolor='#333333', linewidth=0.3, alpha=0.85)
-    ax2.set_yticks(range(20))
+    colors = plt.cm.viridis(np.linspace(0.3, 0.9, n_rows))
+    bars = ax2.barh(range(n_rows), dl_vals, color=colors, edgecolor='#333333', linewidth=0.3, alpha=0.85)
+    ax2.set_yticks(range(n_rows))
     ax2.set_yticklabels(accessions, fontsize=9, fontfamily='monospace')
     ax2.invert_yaxis()
     ax2.set_xlabel('Total Downloads')
