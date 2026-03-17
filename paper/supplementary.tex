@@ -91,7 +91,7 @@ DeepLogBot implements a semi-supervised classification pipeline (Figure~\ref{fig
 ]
 \node[block] (input) {Parquet Log Files};
 \node[block, below=of input] (features) {Feature Extraction (36 behavioral features per location)};
-\node[block, below=of features, fill=purple!10] (seeds) {Phase 1: Seed Selection (organic 3-tier / bot 6-signal / hub structural)};
+\node[block, below=of features, fill=purple!10] (seeds) {Phase 1: Seed Selection (user 3-tier / bot 6-signal / hub structural)};
 \node[block, below=of seeds, fill=yellow!15] (llm) {Phase 2: LLM Seed Refinement (blind multi-LLM consensus corrections)};
 \node[block, below=of llm, fill=red!10] (fusion) {Phase 3: Fusion Meta-Learner (GradientBoosting + Platt calibration)};
 \node[block, below=of fusion, fill=blue!10] (hub) {Phase 4: Hub Protection \& Finalization (structural override, insufficient evidence filter, boolean derivation)};
@@ -246,11 +246,11 @@ DeepLogBot computes behavioral features per location, organized into several cat
 
 \subsection{Rule-Based Method}
 
-The rule-based method applies threshold patterns from a YAML configuration file. Classification proceeds in two stages to assign each location to one of three categories---\textbf{bot}, \textbf{hub} (legitimate automation), or \textbf{organic}:
+The rule-based method applies threshold patterns from a YAML configuration file. Classification proceeds in two stages to assign each location to one of three categories: \textbf{bot}, \textbf{hub} (legitimate automation), or \textbf{user}:
 
 \begin{sloppypar}
 \begin{enumerate}
-    \item \textbf{Stage~1 (Organic vs.\ Automated):} Organic patterns match on \texttt{working\_hours\_ratio}~$\geq 0.4$ and \texttt{regularity\_score}~$\leq 0.6$, or \texttt{interval\_cv}~$\geq 0.7$, or \texttt{unique\_users}~$< 50$ with moderate activity. Automated patterns match on \texttt{regularity\_score}~$\geq 0.7$, or \texttt{night\_activity\_ratio}~$\geq 0.35$ with low working hours, or \texttt{user\_coordination\_score}~$\geq 0.6$ with many users.
+    \item \textbf{Stage~1 (User vs.\ Automated):} User patterns match on \texttt{working\_hours\_ratio}~$\geq 0.4$ and \texttt{regularity\_score}~$\leq 0.6$, or \texttt{interval\_cv}~$\geq 0.7$, or \texttt{unique\_users}~$< 50$ with moderate activity. Automated patterns match on \texttt{regularity\_score}~$\geq 0.7$, or \texttt{night\_activity\_ratio}~$\geq 0.35$ with low working hours, or \texttt{user\_coordination\_score}~$\geq 0.6$ with many users.
 
     \item \textbf{Stage~2 (Bot vs.\ Hub):} Among automated locations, bot patterns include many-users-low-downloads (\texttt{unique\_users}~$\geq 1000$, \texttt{downloads\_per\_user}~$\leq 50$), coordinated activity (\texttt{coordination\_score}~$\geq 0.7$, \texttt{authenticity\_score}~$\leq 0.4$), and suspicious timing (\texttt{night\_activity\_ratio}~$\geq 0.5$, \texttt{working\_hours\_ratio}~$\leq 0.2$). Hub patterns match on mirror-like behavior (\texttt{downloads\_per\_user}~$\geq 500$, \texttt{unique\_users}~$\leq 100$) or CI/CD patterns (\texttt{users}~$\leq 10$, \texttt{regularity}~$\geq 0.7$).
 
@@ -264,15 +264,15 @@ The deep method implements a four-phase semi-supervised pipeline (Seed Selection
 
 \subsubsection{Phase 1: Seed Selection}
 
-Seed selection identifies high-confidence training examples for each category using structural and behavioral heuristics. The seeds are \emph{not} the final classification --- they serve only as labeled training data for the meta-learner. Each seed receives a confidence weight (0--1) that influences its importance during gradient-boosted training.
+Seed selection identifies high-confidence training examples for each category using structural and behavioral heuristics. The seeds are \emph{not} the final classification; they serve only as labeled training data for the meta-learner. Each seed receives a confidence weight (0--1) that influences its importance during gradient-boosted training.
 
 \paragraph{Minimum volume filter.} All seeds require a minimum of 20 total downloads (\texttt{MIN\_SEED\_DOWNLOADS}~$= 20$). Below this threshold, behavioral features (e.g., hourly entropy, working hours ratio) become unreliable because they are computed from too few events. This filter is critical: without it, the training set would include noisy locations where a handful of downloads happened to fall at night or during working hours purely by chance, degrading meta-learner performance.
 
-\paragraph{Organic seeds (3-tier system).}
+\paragraph{User seeds (3-tier system).}
 \begin{itemize}
-    \item \textbf{Tier~A --- Individual researchers} (confidence 1.0): $\leq$10 users, $\leq$5 downloads/user, 20--200 total downloads, working hours ratio $>$0.3, night activity $<$0.5, $\geq$2 years span. These are the cleanest organic examples: small-scale, sustained, daytime activity.
-    \item \textbf{Tier~B --- Active researchers} (confidence 0.7): $\leq$50 users, $\leq$10 downloads/user, 20--1000 total downloads, working hours ratio $>$0.25, hourly entropy $>$1.5, burst pattern score $<$0.5. Broader than Tier~A, these capture moderately active research locations with irregular (non-automated) temporal patterns.
-    \item \textbf{Tier~C --- Research groups} (confidence 0.4): $\leq$200 users, $\leq$20 downloads/user, $\geq$20 total downloads, user coordination score $<$0.3, protocol legitimacy $>$0.3. Additional safeguards exclude locations active only in the latest year with $>$50 users (likely distributed bot farms appearing as ``new'' research groups) and single-year locations with $>$30 users (insufficient history to confirm organic behavior).
+    \item \textbf{Tier~A - Individual researchers} (confidence 1.0): $\leq$10 users, $\leq$5 downloads/user, 20--200 total downloads, working hours ratio $>$0.3, night activity $<$0.5, $\geq$2 years span. These are the cleanest user examples: small-scale, sustained, daytime activity.
+    \item \textbf{Tier~B - Active researchers} (confidence 0.7): $\leq$50 users, $\leq$10 downloads/user, 20--1000 total downloads, working hours ratio $>$0.25, hourly entropy $>$1.5, burst pattern score $<$0.5. Broader than Tier~A, these capture moderately active research locations with irregular (non-automated) temporal patterns.
+    \item \textbf{Tier~C - Research groups} (confidence 0.4): $\leq$200 users, $\leq$20 downloads/user, $\geq$20 total downloads, user coordination score $<$0.3, protocol legitimacy $>$0.3. Additional safeguards exclude locations active only in the latest year with $>$50 users (likely distributed bot farms appearing as ``new'' research groups) and single-year locations with $>$30 users (insufficient history to confirm user behavior).
 \end{itemize}
 
 \noindent The decreasing confidence weights reflect decreasing certainty: Tier~A seeds are unambiguous individual researchers, while Tier~C seeds may include small institutional users that share some characteristics with legitimate automation.
@@ -284,12 +284,12 @@ Seed selection identifies high-confidence training examples for each category us
     \item \textbf{Nocturnal}: Night activity ratio $>$0.8, working hours ratio $<$0.1. Extreme nocturnal activity with essentially no daytime presence, inconsistent with any plausible human usage pattern regardless of time zone.
     \item \textbf{Coordinated}: $>$10,000 users, $<$20 downloads/user. Massive-scale coordinated access characteristic of large botnets or web crawlers.
     \item \textbf{Scraper}: $>$15,000 unique projects accessed. Locations that systematically crawl the entire PRIDE catalog, accessing far more datasets than any researcher or institution would.
-    \item \textbf{Year-over-year explosion}: Spike ratio $>$50$\times$ compared to previous years, $>$200 users, $>$95\% of activity in the latest year. Captures locations that experience sudden, extreme surges in activity, typically indicating the emergence of a new automated process rather than organic growth.
+    \item \textbf{Year-over-year explosion}: Spike ratio $>$50$\times$ compared to previous years, $>$200 users, $>$95\% of activity in the latest year. Captures locations that experience sudden, extreme surges in activity, typically indicating the emergence of a new automated process rather than gradual growth.
 \end{itemize}
 
 \noindent Bot seeds are assigned confidence 0.7 (base), boosted to 0.9 for $>$10,000 users, 0.95 for bot-farm + nocturnal overlap, and reduced to 0.6 for distributed bots (where individual signals are weaker).
 
-\paragraph{Hub-like exclusion from bot seeds.} Locations with downloads/user $>$200 sustained over $\geq$3 years are excluded from bot seeds regardless of other signals. This prevents institutional mirrors from contaminating the bot training set --- a mirror may have thousands of users and uniform temporal patterns, but the key distinguishing feature is high downloads per user (institutional users download hundreds of files each, while bot ``users'' download 3--15). This exclusion is critical for preventing the meta-learner from learning to associate high download volume with bot behavior.
+\paragraph{Hub-like exclusion from bot seeds.} Locations with downloads/user $>$200 sustained over $\geq$3 years are excluded from bot seeds regardless of other signals. This prevents institutional mirrors from contaminating the bot training set; a mirror may have thousands of users and uniform temporal patterns, but the key distinguishing feature is high downloads per user (institutional users download hundreds of files each, while bot ``users'' download 3--15). This exclusion is critical for preventing the meta-learner from learning to associate high download volume with bot behavior.
 
 \paragraph{Hub seeds (2 structural patterns).}
 \begin{itemize}
@@ -299,7 +299,7 @@ Seed selection identifies high-confidence training examples for each category us
 
 \noindent Hub seeds exclude nocturnal-dominant locations (working hours ratio $<$0.1 and night activity $>$0.7) to avoid capturing bot locations that happen to have high downloads/user. Confidence is set to 0.8 (base), boosted to 0.95 for protocol-verified hubs (Aspera ratio $>$0.3 or Globus ratio $>$0.1) and 0.85 for long-running hubs ($\geq$4 years).
 
-\paragraph{Seed overlap resolution.} Seed sets are resolved with strict priority ordering: \textbf{hub $>$ bot $>$ organic}. If a location qualifies as both a hub seed and a bot seed, it is retained only as a hub seed and removed from the bot set. Similarly, bot--organic overlaps are resolved in favor of bot. This priority reflects the asymmetric cost of misclassification: incorrectly training the meta-learner to associate hub patterns with bot behavior is far more damaging than the reverse, because hub misclassification removes legitimate scientific infrastructure from downstream analyses.
+\paragraph{Seed overlap resolution.} Seed sets are resolved with strict priority ordering: \textbf{hub $>$ bot $>$ user}. If a location qualifies as both a hub seed and a bot seed, it is retained only as a hub seed and removed from the bot set. Similarly, bot--user overlaps are resolved in favor of bot. This priority reflects the asymmetric cost of misclassification: incorrectly training the meta-learner to associate hub patterns with bot behavior is far more damaging than the reverse, because hub misclassification removes legitimate scientific infrastructure from downstream analyses.
 
 \subsubsection{Phase 2: LLM Seed Refinement}
 
@@ -311,9 +311,9 @@ A \texttt{GradientBoostingClassifier} (200 estimators, max depth 5, learning rat
 
 The model takes 36 behavioral features as input (Table~\ref{tab:all_features}), organized into six groups: download intensity (unique users, downloads/user, total downloads), temporal patterns (working hours ratio, night activity, hourly entropy, burst pattern score, spike ratio), protocol usage (Aspera ratio, Globus ratio, protocol legitimacy score), user distribution (user entropy, Gini coefficient, single-download user ratio, power user ratio), growth dynamics (years span, year-over-year CV, fraction latest year, momentum score, recent activity ratio), and project diversity (unique projects, top project concentration, top-3 project concentration, project HHI).
 
-Probabilities are calibrated via Platt scaling (\texttt{CalibratedClassifierCV} with sigmoid method, \texttt{cv=5}). The calibrated probabilities enable meaningful confidence thresholds: predictions with $<$0.5 maximum probability are flagged as \texttt{needs\_review}. The key discriminating features --- identified through feature importance analysis --- are downloads per user, unique users, unique projects, total downloads, and user Gini coefficient.
+Probabilities are calibrated via Platt scaling (\texttt{CalibratedClassifierCV} with sigmoid method, \texttt{cv=5}). The calibrated probabilities enable meaningful confidence thresholds: predictions with $<$0.5 maximum probability are flagged as \texttt{needs\_review}. The key discriminating features, identified through feature importance analysis, are downloads per user, unique users, unique projects, total downloads, and user Gini coefficient.
 
-\paragraph{Training data composition.} Across the full PRIDE dataset, seed selection typically yields $\sim$25,000--35,000 organic seeds, $\sim$300--700 bot seeds, and $\sim$500--900 hub seeds. The class imbalance (organic seeds outnumber bot seeds by $\sim$50:1) is partially mitigated by confidence weighting and the gradient boosting algorithm's sequential error correction, but represents a fundamental challenge: bot locations are inherently rare, and the meta-learner has fewer examples from which to learn bot patterns. This imbalance means the model may underdetect bots in novel configurations not represented in the seed set.
+\paragraph{Training data composition.} Across the full PRIDE dataset, seed selection typically yields $\sim$25,000--35,000 user seeds, $\sim$300--700 bot seeds, and $\sim$500--900 hub seeds. The class imbalance (user seeds outnumber bot seeds by $\sim$50:1) is partially mitigated by confidence weighting and the gradient boosting algorithm's sequential error correction, but represents a fundamental challenge: bot locations are inherently rare, and the meta-learner has fewer examples from which to learn bot patterns. This imbalance means the model may underdetect bots in novel configurations not represented in the seed set.
 
 \subsubsection{Phase 4: Hub Protection \& Finalization}
 
@@ -338,7 +338,7 @@ The protection rules operate on two structural signals, from the config file:
 
 \begin{itemize}
     \item \textbf{Insufficient evidence}: Locations with $<$3 total downloads are marked as insufficient evidence. At 1--2 downloads, behavioral features are essentially random: a single download at 2\,AM does not indicate nocturnal bot behavior, and a single download of one file does not indicate scraping. The threshold of 3 (rather than 5 or 10) was chosen empirically: locations with 3--4 downloads still show enough signal for the meta-learner to produce useful (if low-confidence) predictions, while raising the threshold to 5 would reclassify $\sim$7,000 additional locations as insufficient evidence.
-    \item \textbf{User sub-classification}: Organic locations with $\leq$10 users and $\leq$5 downloads/user are labeled as \texttt{independent\_user} (individual researchers), while the remainder are \texttt{normal} (research groups or active labs).
+    \item \textbf{User sub-classification}: User locations with $\leq$10 users and $\leq$5 downloads/user are labeled as \texttt{independent\_user} (individual researchers), while the remainder are \texttt{normal} (research groups or active labs).
     \item \textbf{Boolean derivation}: Final boolean columns (\texttt{is\_bot}, \texttt{is\_hub}, \texttt{is\_organic}) are derived from the hierarchical \texttt{behavior\_type} and \texttt{automation\_category} fields.
 \end{itemize}
 
@@ -346,7 +346,7 @@ The protection rules operate on two structural signals, from the config file:
 
 The pipeline has several known limitations that arise from the fundamental challenges of semi-supervised traffic classification:
 
-\paragraph{1. Bot--hub boundary ambiguity.} The hardest classification boundary is between \textbf{large institutional hubs and sophisticated bot networks}. Both can exhibit: many users, high total download volume, multi-year sustained activity, and access to thousands of datasets. The key discriminating feature is downloads per user --- hubs have $>$200 DL/user while bot farms have 3--15 DL/user --- but locations in the 15--200 DL/user range occupy an ambiguous zone where the meta-learner's confidence is low. These locations are flagged with \texttt{needs\_review = True} but their classification may be unreliable. Examples include medium-sized bioinformatics groups with automated pipelines that download moderately, or sophisticated bots that throttle their per-user download rate to mimic human behavior.
+\paragraph{1. Bot--hub boundary ambiguity.} The hardest classification boundary is between \textbf{large institutional hubs and sophisticated bot networks}. Both can exhibit: many users, high total download volume, multi-year sustained activity, and access to thousands of datasets. The key discriminating feature is downloads per user: hubs have $>$200 DL/user while bot farms have 3--15 DL/user. However, locations in the 15--200 DL/user range occupy an ambiguous zone where the meta-learner's confidence is low. These locations are flagged with \texttt{needs\_review = True} but their classification may be unreliable. Examples include medium-sized bioinformatics groups with automated pipelines that download moderately, or sophisticated bots that throttle their per-user download rate to mimic human behavior.
 
 \paragraph{2. Geographic proxy limitations.} The classification operates at the \textbf{geographic location level}, meaning all users from the same city/region are grouped together. This creates two failure modes:
 \begin{itemize}
@@ -354,24 +354,24 @@ The pipeline has several known limitations that arise from the fundamental chall
     \item \textbf{VPN and proxy aggregation}: Users behind institutional VPNs or cloud-based proxies appear to originate from a single location. A university VPN concentrating hundreds of researchers into one geographic point can produce a profile that resembles a bot farm (many users, low DL/user), while a cloud-hosted bot using a residential proxy appears as a single legitimate user.
 \end{itemize}
 
-\paragraph{3. Temporal distribution of seeds.} Organic Tier~A seeds require $\geq$2 years of activity, which \textbf{systematically excludes new locations} from the highest-confidence organic training set. Locations that first appeared in the final year of the study period can only qualify as Tier~B or Tier~C seeds (lower confidence). This means the meta-learner has weaker training signal for new locations, and newly active legitimate users may receive lower confidence scores. Conversely, bot seeds emphasizing \texttt{fraction\_latest\_year $> 0.8$} for distributed bots may miss bot campaigns that have been running for multiple years.
+\paragraph{3. Temporal distribution of seeds.} User Tier~A seeds require $\geq$2 years of activity, which \textbf{systematically excludes new locations} from the highest-confidence user training set. Locations that first appeared in the final year of the study period can only qualify as Tier~B or Tier~C seeds (lower confidence). This means the meta-learner has weaker training signal for new locations, and newly active legitimate users may receive lower confidence scores. Conversely, bot seeds emphasizing \texttt{fraction\_latest\_year $> 0.8$} for distributed bots may miss bot campaigns that have been running for multiple years.
 
-\paragraph{4. Seed contamination.} The pipeline's accuracy depends on the purity of seed sets. If the heuristic thresholds are poorly calibrated, contaminated seeds will teach the meta-learner incorrect associations. Several safeguards mitigate this risk --- hub-like exclusion from bot seeds, multi-year requirements for hub seeds, behavioral exclusions --- but edge cases remain:
+\paragraph{4. Seed contamination.} The pipeline's accuracy depends on the purity of seed sets. If the heuristic thresholds are poorly calibrated, contaminated seeds will teach the meta-learner incorrect associations. Several safeguards mitigate this risk (hub-like exclusion from bot seeds, multi-year requirements for hub seeds, behavioral exclusions), but edge cases remain:
 \begin{itemize}
     \item A botnet that uses Aspera or Globus (extremely rare but possible) would be excluded from bot seeds and potentially protected as a hub.
-    \item An automated reanalysis pipeline at a small institution (5 users, 100 DL/user) that only started in the current year would fail the multi-year requirement for hub seeds and might be classified as a research group (organic Tier~C).
+    \item An automated reanalysis pipeline at a small institution (5 users, 100 DL/user) that only started in the current year would fail the multi-year requirement for hub seeds and might be classified as a research group (user Tier~C).
     \item Large volunteer-based projects (e.g., citizen science) with thousands of individual users each making few downloads would match bot-farm seed criteria despite being legitimate.
 \end{itemize}
 
 \paragraph{5. Protocol signal erosion.} The pipeline uses Aspera and Globus usage as strong hub indicators. As tools like \texttt{pridepy} lower adoption barriers for high-performance protocols, individual users may increasingly use Aspera and Globus for routine downloads. This will gradually erode the discriminative power of protocol-based features. Future versions of the pipeline will need to adapt as protocol adoption patterns evolve.
 
-\paragraph{6. Insufficient evidence threshold.} The threshold of $<$3 downloads for insufficient evidence is conservative. Locations with 3--10 downloads have technically computable features, but the meta-learner's predictions for these locations are inherently noisy. A location with 3 downloads all at night is flagged as bot despite insufficient statistical evidence, while a location with 3 daytime downloads is classified as organic. In practice, these low-activity locations contribute negligibly to total download volume ($<$0.02\% of all downloads), so misclassification has minimal impact on aggregate statistics but may affect per-location accuracy assessments.
+\paragraph{6. Insufficient evidence threshold.} The threshold of $<$3 downloads for insufficient evidence is conservative. Locations with 3--10 downloads have technically computable features, but the meta-learner's predictions for these locations are inherently noisy. A location with 3 downloads all at night is flagged as bot despite insufficient statistical evidence, while a location with 3 daytime downloads is classified as user. In practice, these low-activity locations contribute negligibly to total download volume ($<$0.02\% of all downloads), so misclassification has minimal impact on aggregate statistics but may affect per-location accuracy assessments.
 
 \paragraph{7. Concept drift.} The pipeline is trained on behavioral patterns observed during 2021--2025. As bot technology evolves (e.g., AI-generated browsing patterns, randomized request timing) and legitimate automation patterns shift (e.g., more institutions adopting automated reanalysis), the seed heuristics may become less effective. The pipeline does not currently include temporal model updating or drift detection mechanisms. Re-running the full pipeline periodically on updated data partially addresses this, but gradual drift in bot sophistication may go undetected until classification accuracy degrades noticeably.
 
-\paragraph{8. Class imbalance in training.} Organic seeds outnumber bot seeds by $\sim$50:1 and hub seeds by $\sim$30:1. While confidence weighting and gradient boosting partially compensate, the meta-learner may still exhibit \textbf{recall bias toward organic}: locations with ambiguous features are more likely to be classified as organic simply because organic patterns dominate the training set. This is acceptable for our primary use case (separating bot traffic from user traffic to compute accurate download statistics), but means the pipeline likely \emph{undercounts} bots rather than overcounts them.
+\paragraph{8. Class imbalance in training.} User seeds outnumber bot seeds by $\sim$50:1 and hub seeds by $\sim$30:1. While confidence weighting and gradient boosting partially compensate, the meta-learner may still exhibit \textbf{recall bias toward user}: locations with ambiguous features are more likely to be classified as user simply because user patterns dominate the training set. This is acceptable for our primary use case (separating bot traffic from user traffic to compute accurate download statistics), but means the pipeline likely \emph{undercounts} bots rather than overcounts them.
 
-\paragraph{9. Single-year bots with human-like patterns.} The most challenging false negatives are \textbf{bots that mimic human behavior}: they operate during working hours, download at irregular intervals, and access a realistic number of datasets. These bots fail to match any bot seed heuristic (no nocturnal activity, no user-count anomaly, no temporal concentration) and produce organic-like feature profiles. Without additional signals such as browser fingerprinting, session-level behavioral analysis, or known-bot IP lists (none of which are available in PRIDE's anonymized logs), these sophisticated bots are fundamentally undetectable by our approach.
+\paragraph{9. Single-year bots with human-like patterns.} The most challenging false negatives are \textbf{bots that mimic human behavior}: they operate during working hours, download at irregular intervals, and access a realistic number of datasets. These bots fail to match any bot seed heuristic (no nocturnal activity, no user-count anomaly, no temporal concentration) and produce user-like feature profiles. Without additional signals such as browser fingerprinting, session-level behavioral analysis, or known-bot IP lists (none of which are available in PRIDE's anonymized logs), these sophisticated bots are fundamentally undetectable by our approach.
 
 
 % ======================================================================
@@ -385,7 +385,7 @@ Initial ground truth labels were assigned using high-confidence heuristic criter
 
 \begin{table}[H]
 \centering
-\caption{Ground truth label criteria and counts. Subtypes are applied hierarchically (each excludes locations matched by prior subtypes within the same category); per-subtype counts are not listed as they depend on evaluation order --- totals per category are the relevant quantities.}
+\caption{Ground truth label criteria and counts. Subtypes are applied hierarchically (each excludes locations matched by prior subtypes within the same category); per-subtype counts are not listed as they depend on evaluation order; totals per category are the relevant quantities.}
 \label{tab:ground_truth}
 \small
 \begin{tabular}{llrp{6cm}}
@@ -404,7 +404,7 @@ Initial ground truth labels were assigned using high-confidence heuristic criter
 \cmidrule{2-4}
 & \textbf{Total} & \textbf{44} & \\
 \midrule
-\multirow{3}{*}{Organic} & Individual user & -- & $\leq$3 users, $\leq$20 DL/user, work ratio $\geq$0.4 \\
+\multirow{3}{*}{User} & Individual user & -- & $\leq$3 users, $\leq$20 DL/user, work ratio $\geq$0.4 \\
 & Research group & -- & 3--30 users, 5--100 DL/user, work ratio $\geq$0.35 \\
 & Casual user & -- & $\leq$5 users, $\leq$50 DL/user, night ratio $\leq$0.3 \\
 \cmidrule{2-4}
@@ -431,7 +431,7 @@ The two annotators were:
     \item \textbf{Qwen3-30B-A3B} (Alibaba): Run locally via Ollama with temperature 0.1 for consistency, processing each location sequentially with no access to other annotations.
 \end{enumerate}
 
-Both LLMs used the same structured prompt defining three categories (bot, hub, organic) with explicit feature interpretation guidelines. The key discriminator was downloads per user: bots typically show 3--15 DL/user, hubs $>$200 DL/user, and organic falls in between with research-consistent patterns.
+Both LLMs used the same structured prompt defining three categories (bot, hub, user) with explicit feature interpretation guidelines. The key discriminator was downloads per user: bots typically show 3--15 DL/user, hubs $>$200 DL/user, and user falls in between with research-consistent patterns.
 
 \paragraph{Inter-annotator agreement.}
 Of the 1,153 locations, 1,029 received valid labels from both LLMs (124 had parse errors). Cohen's kappa was 0.535 (moderate agreement) with 75.5\% raw agreement (777/1,029). The confusion matrix between annotators shows:
@@ -445,21 +445,21 @@ Of the 1,153 locations, 1,029 received valid labels from both LLMs (124 had pars
 \toprule
 & \multicolumn{3}{c}{\textbf{Qwen3}} & \\
 \cmidrule{2-4}
-\textbf{Claude} & Bot & Hub & Organic & \textbf{Total} \\
+\textbf{Claude} & Bot & Hub & User & \textbf{Total} \\
 \midrule
 Bot & 559 & 4 & 35 & 598 \\
 Hub & 27 & 95 & 41 & 163 \\
-Organic & 133 & 12 & 123 & 268 \\
+User & 133 & 12 & 123 & 268 \\
 \midrule
 \textbf{Total} & 719 & 111 & 199 & 1,029 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Qwen3 was more aggressive at labeling locations as bots (719 vs.\ 598), while Claude assigned more organic (268 vs.\ 199) and hub (163 vs.\ 111) labels. The dominant disagreement pattern was Claude=organic $\to$ Qwen3=bot (133 cases), typically involving mid-sized research cities with moderate user counts.
+Qwen3 was more aggressive at labeling locations as bots (719 vs.\ 598), while Claude assigned more user (268 vs.\ 199) and hub (163 vs.\ 111) labels. The dominant disagreement pattern was Claude=user $\to$ Qwen3=bot (133 cases), typically involving mid-sized research cities with moderate user counts.
 
 \paragraph{Consensus resolution.}
-The 777 locations where both LLMs agreed were assigned the consensus label directly. Of the 252 disagreements, 157 were resolved by feature-based tiebreaker rules (e.g., if DL/user $<$ 15, single-year activity, and high hourly entropy, resolve as bot; if total downloads $<$ 50 with $\leq$5 users, resolve as organic). The remaining 95 truly ambiguous locations were excluded. The final consensus set contains 934 locations: 593 bot (63.5\%), 134 hub (14.3\%), 207 organic (22.2\%).
+The 777 locations where both LLMs agreed were assigned the consensus label directly. Of the 252 disagreements, 157 were resolved by feature-based tiebreaker rules (e.g., if DL/user $<$ 15, single-year activity, and high hourly entropy, resolve as bot; if total downloads $<$ 50 with $\leq$5 users, resolve as user). The remaining 95 truly ambiguous locations were excluded. The final consensus set contains 934 locations: 593 bot (63.5\%), 134 hub (14.3\%), 207 user (22.2\%).
 
 \paragraph{Human review.}
 All consensus labels and tiebreaker rules were reviewed by a domain expert (Y.P.-R.) who validated the annotations based on direct knowledge of proteomics institutions and PRIDE usage patterns.
@@ -498,14 +498,14 @@ Hub precision & 0.850 & & 0.921 & +0.071 \\
 Hub recall & 0.576 & & 0.946 & +0.370 \\
 Hub F1 & 0.687 & & 0.933 & +0.246 \\
 \midrule
-Organic precision & 0.365 & & 0.766 & +0.401 \\
-Organic recall & 0.261 & & 0.952 & +0.691 \\
-Organic F1 & 0.305 & & 0.849 & +0.544 \\
+User precision & 0.365 & & 0.766 & +0.401 \\
+User recall & 0.261 & & 0.952 & +0.691 \\
+User F1 & 0.305 & & 0.849 & +0.544 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The largest improvements came from two systematic corrections: (i)~research-city locations with high working-hours ratios that were heuristically seeded as bots were correctly classified as organic, as the gold-standard labels teach the meta-learner that working-hours activity in proteomics-rich cities indicates legitimate access; and (ii)~residential-area locations with night-dominant patterns that were heuristically labeled organic were correctly classified as bot, as the model learns to recognize distributed bot-farm signatures in non-research areas.
+The largest improvements came from two systematic corrections: (i)~research-city locations with high working-hours ratios that were heuristically seeded as bots were correctly classified as user, as the gold-standard labels teach the meta-learner that working-hours activity in proteomics-rich cities indicates legitimate access; and (ii)~residential-area locations with night-dominant patterns that were heuristically labeled user were correctly classified as bot, as the model learns to recognize distributed bot-farm signatures in non-research areas.
 
 \begin{table}[H]
 \centering
@@ -516,11 +516,11 @@ The largest improvements came from two systematic corrections: (i)~research-city
 \toprule
 & \multicolumn{3}{c}{\textbf{Gold-Standard Label}} & \\
 \cmidrule{2-4}
-\textbf{Classifier Label} & Bot & Hub & Organic & \textbf{Total} \\
+\textbf{Classifier Label} & Bot & Hub & User & \textbf{Total} \\
 \midrule
 Bot & 188 & 0 & 4 & 192 \\
 Hub & 7 & 40 & 15 & 62 \\
-Organic & 9 & 1 & 45 & 55 \\
+User & 9 & 1 & 45 & 55 \\
 \midrule
 \textbf{Total} & 204 & 41 & 64 & 309 \\
 \bottomrule
@@ -572,11 +572,11 @@ Rules vs Deep & 0.024 & 0.877 & No \\
 \end{tabular}
 \end{table}
 
-McNemar's test evaluates whether two classifiers differ in their \emph{overall} error rate (i.e., the number of locations where one method is correct and the other incorrect). The non-significant result ($p = 0.877$) indicates that Rules and Deep make a similar \emph{number} of errors overall on the heuristic benchmark. However, the bootstrap confidence intervals on Macro F1 (Section~\ref{sec:bootstrap}) show non-overlapping intervals (Deep: 0.731--0.818 vs Rules: 0.574--0.691), indicating that Deep achieves significantly better \emph{class-balanced} performance. This apparent discrepancy arises because McNemar's test is insensitive to which classes the errors fall in: Rules achieves high bot precision but very low hub and organic performance, while Deep balances all three classes. The two methods make a similar total number of errors, but Deep distributes its errors more evenly across classes, yielding higher Macro F1. We therefore interpret the bootstrap Macro F1 as the primary comparison metric, as it reflects class-balanced performance relevant to the three-class classification task.
+McNemar's test evaluates whether two classifiers differ in their \emph{overall} error rate (i.e., the number of locations where one method is correct and the other incorrect). The non-significant result ($p = 0.877$) indicates that Rules and Deep make a similar \emph{number} of errors overall on the heuristic benchmark. However, the bootstrap confidence intervals on Macro F1 (Section~\ref{sec:bootstrap}) show non-overlapping intervals (Deep: 0.731--0.818 vs Rules: 0.574--0.691), indicating that Deep achieves significantly better \emph{class-balanced} performance. This apparent discrepancy arises because McNemar's test is insensitive to which classes the errors fall in: Rules achieves high bot precision but very low hub and user performance, while Deep balances all three classes. The two methods make a similar total number of errors, but Deep distributes its errors more evenly across classes, yielding higher Macro F1. We therefore interpret the bootstrap Macro F1 as the primary comparison metric, as it reflects class-balanced performance relevant to the three-class classification task.
 
 \subsection{Inter-Method Agreement}
 
-Figure~\ref{fig:agreement_supp} shows pairwise agreement between methods. Rules and Deep agree on 87.8\% of classifications (Cohen's $\kappa$ = 0.508), indicating moderate agreement. Per-category agreement is highest for organic classification and lowest for hubs.
+Figure~\ref{fig:agreement_supp} shows pairwise agreement between methods. Rules and Deep agree on 87.8\% of classifications (Cohen's $\kappa$ = 0.508), indicating moderate agreement. Per-category agreement is highest for user classification and lowest for hubs.
 
 \begin{figure}[H]
 \centering
@@ -603,12 +603,12 @@ To contextualize the improvements from the gold-standard-trained deep pipeline, 
 
 \begin{table}[H]
 \centering
-\caption{Full-dataset classification comparison: Rules vs Deep. Location counts reflect full-dataset classification; ``Organic locs'' includes both classified organic locations and locations with insufficient evidence ($<$3 downloads). Accuracy and Macro F1 are measured against all 934 blind multi-LLM consensus labels; of these, 625 were used as training labels for the Deep method --- see Table~\ref{tab:retraining_comparison} for the held-out evaluation on 309 locations.}
+\caption{Full-dataset classification comparison: Rules vs Deep. Location counts reflect full-dataset classification; ``User locs'' includes both classified user locations and locations with insufficient evidence ($<$3 downloads). Accuracy and Macro F1 are measured against all 934 blind multi-LLM consensus labels; of these, 625 were used as training labels for the Deep method; see Table~\ref{tab:retraining_comparison} for the held-out evaluation on 309 locations.}
 \label{tab:rules_vs_deep_full}
 \small
 \begin{tabular}{lrrrccc}
 \toprule
-\textbf{Method} & \textbf{Bot locs} & \textbf{Hub locs} & \textbf{Organic locs} & \textbf{Accuracy} & \textbf{Macro F1} \\
+\textbf{Method} & \textbf{Bot locs} & \textbf{Hub locs} & \textbf{User locs} & \textbf{Accuracy} & \textbf{Macro F1} \\
 \midrule
 Rules & 22,981 & 714  & 47,438 & 59.7\% & 0.592 \\
 Deep  & 27,063 & 249  & 43,821 & 92.2\% & 0.909 \\
@@ -617,7 +617,7 @@ Deep  & 27,063 & 249  & 43,821 & 92.2\% & 0.909 \\
 \end{table}
 
 \paragraph{Key differences.}
-The rule-based method labels fewer locations as bots (22,981 vs.\ 27,063) compared to the deep pipeline. This underdetection stems from two systematic issues: (i)~the fixed-threshold approach requires locations to clearly exceed specific criteria (e.g., $>$1,000 users, $\leq$50 DL/user) to be flagged as automated, missing distributed bots with moderate user counts (500--1,000) that fall below these thresholds; and (ii)~locations not matching any automated pattern default to organic, even if their behavioral features (uniform temporal patterns, single-year activity) are inconsistent with independent research access. The deep pipeline's fusion meta-learner, by contrast, weighs all 36 behavioral features jointly and benefits from gold-standard training labels, capturing bot patterns that no single threshold rule detects. Additionally, the pipeline includes a suspicious hub demotion step that reclassifies hub-labeled locations with concentrated project downloads (top three projects exceeding 45--50\% of traffic with HHI $>$ 0.05) as bots, since legitimate mirrors download broadly across many datasets.
+The rule-based method labels fewer locations as bots (22,981 vs.\ 27,063) compared to the deep pipeline. This underdetection stems from two systematic issues: (i)~the fixed-threshold approach requires locations to clearly exceed specific criteria (e.g., $>$1,000 users, $\leq$50 DL/user) to be flagged as automated, missing distributed bots with moderate user counts (500--1,000) that fall below these thresholds; and (ii)~locations not matching any automated pattern default to user, even if their behavioral features (uniform temporal patterns, single-year activity) are inconsistent with independent research access. The deep pipeline's fusion meta-learner, by contrast, weighs all 36 behavioral features jointly and benefits from gold-standard training labels, capturing bot patterns that no single threshold rule detects. Additionally, the pipeline includes a suspicious hub demotion step that reclassifies hub-labeled locations with concentrated project downloads (top three projects exceeding 45--50\% of traffic with HHI $>$ 0.05) as bots, since legitimate mirrors download broadly across many datasets.
 
 \begin{table}[H]
 \centering
@@ -631,17 +631,17 @@ The rule-based method labels fewer locations as bots (22,981 vs.\ 27,063) compar
 \multirow{3}{*}{Rules}
     & Bot     & 0.810 & 0.589 & 0.682 \\
     & Hub     & 0.653 & 0.858 & 0.742 \\
-    & Organic & 0.287 & 0.454 & 0.352 \\
+    & User & 0.287 & 0.454 & 0.352 \\
 \midrule
 \multirow{3}{*}{Deep}
     & Bot     & 1.000 & 0.975 & 0.987 \\
     & Hub     & 0.687 & 1.000 & 0.815 \\
-    & Organic & 1.000 & 0.778 & 0.875 \\
+    & User & 1.000 & 0.778 & 0.875 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The rule-based method achieves reasonable bot precision (0.810) but the lowest organic F1 (0.352), confirming that static thresholds cannot separate research-city organic traffic from automated patterns. The deep pipeline improves all per-class F1 scores substantially. Note that the Deep method's high scores on the full 934-label set reflect partial overlap with training seeds (625 locations); the held-out evaluation on 309 locations (Table~\ref{tab:retraining_comparison}) provides an unbiased comparison.
+The rule-based method achieves reasonable bot precision (0.810) but the lowest user F1 (0.352), confirming that static thresholds cannot separate research-city user traffic from automated patterns. The deep pipeline improves all per-class F1 scores substantially. Note that the Deep method's high scores on the full 934-label set reflect partial overlap with training seeds (625 locations); the held-out evaluation on 309 locations (Table~\ref{tab:retraining_comparison}) provides an unbiased comparison.
 
 \begin{table}[H]
 \centering
@@ -652,18 +652,18 @@ The rule-based method achieves reasonable bot precision (0.810) but the lowest o
 \toprule
 & \multicolumn{3}{c}{\textbf{Consensus Label}} & \\
 \cmidrule{2-4}
-\textbf{Classifier Label} & Bot & Hub & Organic & \textbf{Total} \\
+\textbf{Classifier Label} & Bot & Hub & User & \textbf{Total} \\
 \midrule
 Bot & 349 & 15 & 67 & 431 \\
 Hub & 15 & 115 & 46 & 176 \\
-Organic & 229 & 4 & 94 & 327 \\
+User & 229 & 4 & 94 & 327 \\
 \midrule
 \textbf{Total} & 593 & 134 & 207 & 934 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The rule-based confusion matrix reveals two characteristic error modes: 229 bot locations misclassified as organic (residential proxy locations falling below the automated threshold) and 67 organic locations misclassified as bots (research cities with features that trigger automated patterns). These are precisely the errors that the LLM-augmented seed correction addresses.
+The rule-based confusion matrix reveals two characteristic error modes: 229 bot locations misclassified as user (residential proxy locations falling below the automated threshold) and 67 user locations misclassified as bots (research cities with features that trigger automated patterns). These are precisely the errors that the LLM-augmented seed correction addresses.
 
 % ======================================================================
 \section{S7. Bot Removal Analysis}
@@ -672,7 +672,7 @@ The rule-based confusion matrix reveals two characteristic error modes: 229 bot 
 
 \subsection{Full-Dataset Classification}
 
-The semi-supervised classification pipeline was applied to the complete dataset of locations aggregated from 159.3 million download records. The classification results are summarized in Figure~\ref{fig:classification_dist}. The asymmetry between location counts and download volumes is striking: bots generate far more traffic per location on average, while institutional hubs --- though comprising a small fraction of locations --- account for a substantial share of download volume.
+The semi-supervised classification pipeline was applied to the complete dataset of locations aggregated from 159.3 million download records. The classification results are summarized in Figure~\ref{fig:classification_dist}. The asymmetry between location counts and download volumes is striking: bots generate far more traffic per location on average, while institutional hubs, though comprising a small fraction of locations, account for a substantial share of download volume.
 
 \begin{figure}[H]
 \centering
@@ -830,11 +830,11 @@ Locations in this set are excluded from seed selection and training, providing a
 \paragraph{2. User identity resolution.}
 A ``unique user'' is defined as a distinct anonymized IP hash.
 This proxy is imperfect in two directions: (i)~multiple individuals behind a single NAT gateway or institutional proxy appear as one user, deflating user counts; and (ii)~a single individual using multiple networks (e.g., VPN, home vs.\ office) appears as multiple users, inflating counts.
-Consequently, the ``downloads per user'' metric---central to both hub protection and bot-farm detection---may be distorted for locations with heavy proxy usage.
+Consequently, the ``downloads per user'' metric, central to both hub protection and bot-farm detection, may be distorted for locations with heavy proxy usage.
 
 \paragraph{3. Geographic location granularity.}
 All users from the same geolocated coordinate are grouped into a single location profile.
-In large metropolitan areas, this conflates distinct institutions and user populations (e.g., multiple universities in London or Beijing), potentially masking mixed organic/bot behavior.
+In large metropolitan areas, this conflates distinct institutions and user populations (e.g., multiple universities in London or Beijing), potentially masking mixed user/bot behavior.
 Conversely, users at the same institution on different subnets may map to different coordinates, splitting what is logically one location.
 
 \paragraph{4. IP geolocation accuracy.}
