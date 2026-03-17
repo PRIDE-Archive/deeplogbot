@@ -45,7 +45,6 @@ from .providers.ebi import (
     TimeSeriesFeaturesExtractor,
     TimeWindowExtractor,
     # Behavioral
-    extract_behavioral_features,
     extract_advanced_behavioral_features,
     add_bot_interaction_features,
     add_bot_signature_features,
@@ -113,7 +112,6 @@ __all__ = [
     # Extraction functions
     "extract_location_features",
     "extract_location_features_ebi",
-    "extract_behavioral_features",
     "extract_advanced_behavioral_features",
     "add_bot_interaction_features",
     "add_bot_signature_features",

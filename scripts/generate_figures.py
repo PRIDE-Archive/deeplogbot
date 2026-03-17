@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Generate publication-quality figures for the PRIDE manuscript.
 
-Creates vector PDF figures from analysis data in output/phase6_analysis/
-and benchmark data in output/phase4_final_benchmark/.
+Creates vector PDF figures from analysis data in output/full_deep_v11/.
 
 Usage:
     python scripts/generate_figures.py
@@ -41,9 +40,9 @@ plt.rcParams.update({
 })
 
 project_root = Path(__file__).parent.parent
-ANALYSIS_DIR = project_root / 'output' / 'phase6_analysis'
-BENCHMARK_DIR = project_root / 'output' / 'phase4_final_benchmark'
-CLASSIFICATION_DIR = project_root / 'output' / 'phase5_full_classification'
+ANALYSIS_DIR = project_root / 'output' / 'full_deep_v11'
+BENCHMARK_DIR = project_root / 'output' / 'full_deep_v11'
+CLASSIFICATION_DIR = project_root / 'output' / 'full_deep_v11'
 FIGURES_DIR = project_root / 'paper' / 'figures'
 PARQUET_PATH = project_root / 'pride_data' / 'data_downloads_parquet.parquet'
 
@@ -57,7 +56,7 @@ EUROPEAN_COUNTRIES = [
 # (https://wellcome.org/research-funding/guidance/prepare-to-apply/low-and-middle-income-countries)
 # China excluded here (already dominant in other panels)
 LMIC_COUNTRIES = [
-    'India', 'Russia', 'Mexico', 'Brazil', 'Turkey', 'Argentina',
+    'India', 'Mexico', 'Brazil', 'Turkey', 'Argentina',
     'Philippines', 'South Africa', 'Ukraine', 'Panama', 'Malaysia',
     'Algeria', 'Thailand', 'Indonesia', 'Bulgaria', 'Colombia',
     'Pakistan', 'Romania', 'Serbia', 'Cuba', 'Sri Lanka', 'Morocco',
@@ -78,14 +77,37 @@ COLORS = {
 def figure_bot_detection_overview(output_dir):
     """Combined figure: (A) Pipeline workflow + (B) Full-dataset classification distribution."""
     print("  Bot detection overview (combined)...")
-    summary_path = Path(project_root / 'output' / 'phase5_full_classification' / 'classification_summary.json')
+    csv_path = CLASSIFICATION_DIR / 'location_analysis.csv'
+    summary_path = CLASSIFICATION_DIR / 'classification_summary.json'
 
-    if not summary_path.exists():
+    if summary_path.exists():
+        with open(summary_path) as f:
+            stats = json.load(f)
+    elif csv_path.exists():
+        # Generate stats from classification CSV
+        _df = pd.read_csv(csv_path, usecols=['behavior_type', 'total_downloads'], low_memory=False)
+        total_locs = len(_df)
+        total_dl = int(_df['total_downloads'].sum())
+        bot_locs = int((_df['behavior_type'] == 'bot').sum())
+        hub_locs = int((_df['behavior_type'] == 'hub').sum())
+        user_locs = int((_df['behavior_type'] == 'user').sum())
+        bot_dl = int(_df.loc[_df['behavior_type'] == 'bot', 'total_downloads'].sum())
+        hub_dl = int(_df.loc[_df['behavior_type'] == 'hub', 'total_downloads'].sum())
+        user_dl = int(_df.loc[_df['behavior_type'] == 'user', 'total_downloads'].sum())
+        stats = {
+            'total_locations': total_locs, 'total_downloads': total_dl,
+            'bot_locations': bot_locs, 'hub_locations': hub_locs,
+            'organic_locations': user_locs,
+            'bot_downloads': bot_dl, 'hub_downloads': hub_dl,
+            'organic_downloads': user_dl,
+            'organic_dl_pct': user_dl / total_dl * 100 if total_dl > 0 else 0,
+            'hub_dl_pct': hub_dl / total_dl * 100 if total_dl > 0 else 0,
+            'bot_dl_pct': bot_dl / total_dl * 100 if total_dl > 0 else 0,
+        }
+        del _df
+    else:
         print("    SKIPPED - missing data")
         return
-
-    with open(summary_path) as f:
-        stats = json.load(f)
 
     import matplotlib.gridspec as gridspec
     from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
@@ -140,43 +162,41 @@ def figure_bot_detection_overview(output_dir):
             fontstyle='italic')
 
     # Row 2: Location aggregation + Feature extraction
-    draw_box(ax, 0.3, 5.9, 4.2, 1.0, 'Location Aggregation\n47,987 geographic locations', color='#EBF5FB', edge='#2980B9', fontsize=9)
+    draw_box(ax, 0.3, 5.9, 4.2, 1.0, 'Location Aggregation\ngeographic locations', color='#EBF5FB', edge='#2980B9', fontsize=9)
     draw_arrow(ax, 4.5, 6.4, 5.0, 6.4)
-    draw_box(ax, 5.0, 5.9, 4.2, 1.0, 'Feature Extraction\n60+ behavioral features\n(activity, temporal, discriminative)', color='#EBF5FB', edge='#2980B9', fontsize=8.5)
+    draw_box(ax, 5.0, 5.9, 4.2, 1.0, 'Feature Extraction\n33 behavioral features\n(temporal, protocol, user dist.)', color='#EBF5FB', edge='#2980B9', fontsize=8.5)
 
-    # Arrows inside DeepLogBot from top to both boxes (no arrow from Parquet)
-    midx = 4.75  # midpoint between the two boxes
-    midy = 7.15  # just below DeepLogBot label
+    # Arrows inside DeepLogBot from top to both boxes
+    midx = 4.75
+    midy = 7.15
     draw_arrow(ax, midx, midy, 2.4, 6.9)
     draw_arrow(ax, midx, midy, 7.1, 6.9)
 
-    # Arrows down to anomaly detection
+    # Arrows down to seed selection
     draw_arrow(ax, 2.4, 5.9, 4.75, 5.4)
     draw_arrow(ax, 7.1, 5.9, 4.75, 5.4)
 
-    # Row 3: Anomaly detection
-    draw_box(ax, 2.5, 4.3, 4.5, 0.9, 'Anomaly Detection\nIsolation Forest (contamination=15%)', color='#F5EEF8', edge='#8E44AD', fontsize=9)
+    # Row 3: Seed Selection
+    draw_box(ax, 2.0, 4.3, 5.5, 0.9, 'Seed Selection\nOrganic (3-tier) \u00b7 Bot (6-signal) \u00b7 Hub (structural)',
+             color='#F5EEF8', edge='#8E44AD', fontsize=9)
 
-    # Arrow down to methods
+    # Arrow down to fusion
     draw_arrow(ax, 4.75, 4.3, 4.75, 3.8)
 
-    # Row 4: Two classification methods side by side
-    draw_box(ax, 1.0, 2.7, 3.0, 0.9, 'Rule-Based\nYAML thresholds\n3-level hierarchy', color='#FADBD8', edge='#E74C3C', fontsize=8.5, bold=False)
-    draw_box(ax, 5.5, 2.7, 3.0, 0.9, 'Deep Architecture\n40+ extra features\n2-stage pipeline', color='#FADBD8', edge='#E74C3C', fontsize=8.5, bold=False)
+    # Row 4: Fusion Meta-Learner
+    draw_box(ax, 1.5, 2.7, 6.5, 0.9, 'Fusion Meta-Learner\nGradientBoosting (3-class) \u00b7 Platt calibration',
+             color='#FADBD8', edge='#E74C3C', fontsize=9, bold=True)
 
-    draw_arrow(ax, 4.75, 3.8, 2.5, 3.6)
-    draw_arrow(ax, 4.75, 3.8, 7.0, 3.6)
+    # Arrow down to hub protection
+    draw_arrow(ax, 4.75, 2.7, 4.75, 2.2)
 
-    # Arrows down to hierarchical classification
-    draw_arrow(ax, 2.5, 2.7, 4.75, 2.2)
-    draw_arrow(ax, 7.0, 2.7, 4.75, 2.2)
-
-    # Row 5: Hierarchical classification output
-    draw_box(ax, 2.5, 1.1, 4.5, 0.9, 'Hierarchical Classification\nL1: Organic vs Automated\nL2: Bot vs Hub\nL3: Subcategory', color='#D4EFDF', edge='#27AE60', fontsize=8.5)
+    # Row 5: Hub Protection + Finalize
+    draw_box(ax, 2.0, 1.1, 5.5, 0.9, 'Hub Protection & Finalization\nStructural override \u00b7 Insufficient evidence filter',
+             color='#D4EFDF', edge='#27AE60', fontsize=8.5)
 
     # Arrow to final output
     draw_arrow(ax, 4.75, 1.1, 4.75, 0.7)
-    draw_box(ax, 1.5, 0.0, 6.5, 0.6, 'Bot-filtered dataset: 35.4M downloads, 34,908 datasets, 208 countries',
+    draw_box(ax, 1.5, 0.0, 6.5, 0.6, 'Bot-filtered dataset for downstream analysis',
              color='#D5F5E3', edge='#27AE60', fontsize=8.5, bold=True)
 
     # ---- Panel B: Classification distribution (download share bar chart) ----
@@ -210,6 +230,194 @@ def figure_bot_detection_overview(output_dir):
     print("    OK")
 
 
+def figure_1_pipeline_overview(output_dir):
+    """Figure 1: Pipeline overview matching the 5-phase deep architecture.
+
+    Pipeline: Seed Selection -> LLM Seed Refinement -> Fusion Meta-Learner -> Hub Protection -> Finalize.
+    """
+    print("  Figure 1: Pipeline overview...")
+    csv_path = CLASSIFICATION_DIR / 'location_analysis.csv'
+    if not csv_path.exists():
+        print("    SKIPPED - no classification data")
+        return
+
+    # Load classification stats dynamically
+    df = pd.read_csv(csv_path, usecols=['behavior_type', 'total_downloads'], low_memory=False)
+    total_locs = len(df)
+    bot_locs = int((df['behavior_type'] == 'bot').sum())
+    hub_locs = int((df['behavior_type'] == 'hub').sum())
+    user_locs = int((df['behavior_type'] == 'user').sum())
+    insuff_locs = int((df['behavior_type'] == 'insufficient_evidence').sum())
+    bot_dl = df.loc[df['behavior_type'] == 'bot', 'total_downloads'].sum()
+    hub_dl = df.loc[df['behavior_type'] == 'hub', 'total_downloads'].sum()
+    user_dl = df.loc[df['behavior_type'] == 'user', 'total_downloads'].sum()
+    total_dl = df['total_downloads'].sum()
+    bot_pct = bot_dl / total_dl * 100
+    hub_pct = hub_dl / total_dl * 100
+    user_pct = user_dl / total_dl * 100
+    del df
+
+    def fmt_dl(val):
+        if val >= 1e6:
+            return f'{val/1e6:.1f}M'
+        elif val >= 1e3:
+            return f'{val/1e3:.0f}K'
+        return str(int(val))
+
+    import matplotlib.patches as mpatches
+    from matplotlib.patches import FancyBboxPatch
+
+    fig, ax = plt.subplots(figsize=(14, 8.5))
+    ax.set_xlim(0, 14)
+    ax.set_ylim(0, 10.5)
+    ax.axis('off')
+
+    bh = 0.55   # box height
+    pad = 0.08  # box corner padding
+
+    def draw_box(x, y, w, h, text, color='#EBF5FB', edge='#2980B9', fontsize=8.5,
+                 bold=False, text_color='black'):
+        box = FancyBboxPatch((x, y), w, h, boxstyle=f'round,pad={pad}',
+                             facecolor=color, edgecolor=edge, linewidth=1.2)
+        ax.add_patch(box)
+        weight = 'bold' if bold else 'normal'
+        ax.text(x + w/2, y + h/2, text, ha='center', va='center',
+                fontsize=fontsize, fontweight=weight, color=text_color,
+                linespacing=1.15)
+
+    def draw_arrow(x1, y1, x2, y2, color='#555555'):
+        ax.annotate('', xy=(x2, y2), xytext=(x1, y1),
+                    arrowprops=dict(arrowstyle='->', color=color, lw=1.3,
+                                    shrinkA=2, shrinkB=2))
+
+    mid = 7.0  # horizontal center
+
+    # ---- nf-downloadstats section (green dashed box) ----
+    nf_rect = mpatches.FancyBboxPatch((0.2, 9.0), 13.1, 1.25, boxstyle='round,pad=0.1',
+                                       facecolor='#F0FFF0', edgecolor='#27AE60',
+                                       linewidth=1.8, linestyle='--')
+    ax.add_patch(nf_rect)
+    ax.text(0.5, 10.1, 'nf-downloadstats', fontsize=10, fontweight='bold',
+            color='#1B7A3D', fontstyle='italic')
+
+    draw_box(0.5, 9.2, 3.2, bh, 'PRIDE Log Files\n(TSV, 1\u2013237 GB)',
+             color='#D5F5E3', edge='#27AE60', fontsize=8.5, bold=True)
+    draw_arrow(3.7, 9.2 + bh/2, 4.4, 9.2 + bh/2)
+    draw_box(4.4, 9.2, 4.0, bh, 'Parse, Filter & Merge\n(Nextflow + HPC)',
+             color='#D5F5E3', edge='#27AE60', fontsize=8.5)
+    draw_arrow(8.4, 9.2 + bh/2, 9.1, 9.2 + bh/2)
+    draw_box(9.1, 9.2, 3.9, bh, 'Parquet Dataset\n159M records (4.7 GB)',
+             color='#D5F5E3', edge='#27AE60', fontsize=8.5, bold=True)
+
+    # Arrow down to DeepLogBot
+    draw_arrow(mid, 9.0, mid, 8.6)
+
+    # ---- DeepLogBot section (blue dashed box) ----
+    dl_rect = mpatches.FancyBboxPatch((0.2, 0.3), 13.1, 8.1, boxstyle='round,pad=0.1',
+                                       facecolor='#F0F8FF', edgecolor='#2980B9',
+                                       linewidth=1.8, linestyle='--')
+    ax.add_patch(dl_rect)
+    ax.text(0.5, 8.2, 'DeepLogBot', fontsize=10, fontweight='bold',
+            color='#1A5276', fontstyle='italic')
+
+    # Row 1: Location Aggregation + Feature Extraction
+    r1y = 7.5
+    draw_box(0.6, r1y, 5.5, bh, f'Location Aggregation\n{total_locs:,} geographic locations',
+             color='#D6EAF8', edge='#2980B9', fontsize=8.5)
+    draw_arrow(6.1, r1y + bh/2, 7.4, r1y + bh/2)
+    draw_box(7.4, r1y, 5.5, bh, 'Feature Extraction\n33 behavioral features per location',
+             color='#D6EAF8', edge='#2980B9', fontsize=8.5)
+
+    # Arrow down from center
+    draw_arrow(mid, r1y, mid, r1y - 0.3)
+
+    # Row 2: Phase 1 - Seed Selection (compact)
+    r2y = 6.35
+    sw = 9.0
+    sx = mid - sw/2
+    draw_box(sx, r2y, sw, bh,
+             'Phase 1: Seed Selection\n'
+             'Organic (3-tier) \u00b7 Bot (6-signal) \u00b7 Hub (structural + institutional)',
+             color='#E8DAEF', edge='#8E44AD', fontsize=8.5)
+
+    draw_arrow(mid, r2y, mid, r2y - 0.3)
+
+    # Row 3: Phase 2 - LLM Seed Refinement
+    r3y = 5.25
+    lw = 9.0
+    lx = mid - lw/2
+    draw_box(lx, r3y, lw, bh,
+             'Phase 2: LLM Seed Refinement\n'
+             'Blind multi-LLM consensus (Claude + Qwen3) \u00b7 '
+             '934 validated seed corrections',
+             color='#FEF9E7', edge='#F39C12', fontsize=8.5, bold=True)
+
+    draw_arrow(mid, r3y, mid, r3y - 0.3)
+
+    # Row 4: Phase 3 - Fusion Meta-Learner (centered, emphasized)
+    r4y = 4.15
+    fw = 9.0
+    fx = mid - fw/2
+    draw_box(fx, r4y, fw, bh,
+             'Phase 3: Fusion Meta-Learner\n'
+             'GradientBoosting (3-class) \u00b7 Platt-calibrated probabilities \u00b7 '
+             'confidence-weighted training',
+             color='#FADBD8', edge='#C0392B', fontsize=9, bold=True)
+
+    draw_arrow(mid, r4y, mid, r4y - 0.3)
+
+    # Row 5: Phase 4 - Hub Protection & Finalization (merged)
+    r5y = 3.05
+    pw = 9.0
+    px = mid - pw/2
+    r6y = r5y  # alias for output arrows below
+    draw_box(px, r5y, pw, bh,
+             'Phase 4: Hub Protection & Finalization\n'
+             'Institutional hub override \u00b7 Insufficient evidence filter (<3 DL) \u00b7 '
+             'Boolean derivation',
+             color='#D6EAF8', edge='#2980B9', fontsize=8.5)
+
+    draw_arrow(mid, r5y, mid, r5y - 0.3)
+
+    # Row 7: Output boxes (Bot, Hub, User + insufficient evidence)
+    r7y = 0.5
+    out_h = 0.65
+    box_w = 3.5
+    gap = 0.4
+    total_w = 3 * box_w + 2 * gap
+    x_start = mid - total_w / 2
+
+    # Arrows from center to each output
+    draw_arrow(mid - 2.5, r6y - 0.3, x_start + box_w / 2, r7y + out_h)
+    draw_arrow(mid, r6y - 0.3, x_start + box_w + gap + box_w / 2, r7y + out_h)
+    draw_arrow(mid + 2.5, r6y - 0.3, x_start + 2 * (box_w + gap) + box_w / 2, r7y + out_h)
+
+    # Bot box (red)
+    draw_box(x_start, r7y, box_w, out_h,
+             f'Bot\n{bot_locs:,} loc. \u00b7 {fmt_dl(bot_dl)} DL ({bot_pct:.1f}%)',
+             color='#FADBD8', edge='#E74C3C', fontsize=9, bold=True, text_color='#C0392B')
+
+    # Hub box (blue)
+    draw_box(x_start + box_w + gap, r7y, box_w, out_h,
+             f'Hub\n{hub_locs:,} loc. \u00b7 {fmt_dl(hub_dl)} DL ({hub_pct:.1f}%)',
+             color='#D6EAF8', edge='#2980B9', fontsize=9, bold=True, text_color='#1A5276')
+
+    # User box (green)
+    draw_box(x_start + 2 * (box_w + gap), r7y, box_w, out_h,
+             f'User\n{user_locs:,} loc. \u00b7 {fmt_dl(user_dl)} DL ({user_pct:.1f}%)',
+             color='#D5F5E3', edge='#27AE60', fontsize=9, bold=True, text_color='#1B7A3D')
+
+    # Insufficient evidence annotation
+    ax.text(x_start + 2 * (box_w + gap) + box_w + 0.2, r7y + out_h / 2,
+            f'+{insuff_locs:,}\ninsufficient\nevidence',
+            fontsize=8, color='#888888', fontstyle='italic', va='center')
+
+    plt.savefig(output_dir / 'figure1_pipeline_overview.pdf', format='pdf',
+                bbox_inches='tight', dpi=600)
+    plt.close()
+    print("    OK")
+
+
 def figure_1_world_map(output_dir):
     """Figure 1: Geographic distribution of PRIDE downloads (bot-filtered)."""
     print("  Figure 1: Geographic distribution...")
@@ -220,6 +428,7 @@ def figure_1_world_map(output_dir):
 
     df = pd.read_csv(csv_path)
     df = df[~df['country'].str.contains('%{', na=False)]
+    df = df[df['country'] != 'Russia']
     top20 = df.head(20).copy()
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -277,53 +486,104 @@ def figure_1b_regional(output_dir):
 
 
 def figure_2_temporal(output_dir):
-    """Figure 2: Downloads over time (yearly trend)."""
+    """Figure 2: Downloads over time — stacked bar (user/hub/bot) + growth."""
     print("  Figure 2: Temporal trends...")
+
+    # Try category breakdown first; fall back to simple yearly
+    cat_path = ANALYSIS_DIR / 'temporal_yearly_by_category.csv'
     csv_path = ANALYSIS_DIR / 'temporal_yearly.csv'
-    if not csv_path.exists():
+
+    has_categories = cat_path.exists()
+    if not has_categories and not csv_path.exists():
         print("    SKIPPED")
         return
 
-    df = pd.read_csv(csv_path)
+    if has_categories:
+        cat_df = pd.read_csv(cat_path)
+    if csv_path.exists():
+        df = pd.read_csv(csv_path)
+    else:
+        df = None
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-    # Panel A: Total downloads per year
-    years = df['year'].astype(int)
-    ax1.bar(years, df['total_downloads'] / 1e6, color='#3498DB', edgecolor='white', width=0.7)
+    # Panel A: Stacked bar — user / hub / bot downloads per year
+    if has_categories:
+        # Column may be 'behavior_type' or 'category' depending on analysis version
+        cat_col = 'behavior_type' if 'behavior_type' in cat_df.columns else 'category'
+        pivot = cat_df.pivot_table(values='total_downloads', index='year',
+                                    columns=cat_col, fill_value=0)
+        years = pivot.index.astype(int)
+        # Ensure columns exist
+        for col in ['user', 'hub', 'bot']:
+            if col not in pivot.columns:
+                pivot[col] = 0
+
+        user_vals = pivot['user'].values / 1e6
+        hub_vals = pivot['hub'].values / 1e6
+
+        ax1.bar(years, user_vals, color=COLORS['organic'], edgecolor='white',
+                width=0.7, label='Users')
+        ax1.bar(years, hub_vals, bottom=user_vals, color=COLORS['hub'],
+                edgecolor='white', width=0.7, label='Hubs')
+
+        totals = user_vals + hub_vals
+        max_dl = totals.max()
+        ax1.set_ylim(0, max_dl * 1.35)
+        for i, (yr, total) in enumerate(zip(years, totals)):
+            ax1.text(yr, total + max_dl * 0.02, f"{total:.1f}M",
+                     ha='center', fontsize=10)
+            # Add YoY user growth % annotation
+            if i > 0 and user_vals[i - 1] > 0:
+                growth_pct = (user_vals[i] - user_vals[i - 1]) / user_vals[i - 1] * 100
+                color = '#27AE60' if growth_pct > 0 else '#E74C3C'
+                arrow = '\u2191' if growth_pct > 0 else '\u2193'
+                ax1.text(yr, total + max_dl * 0.09,
+                         f"user {arrow}{growth_pct:+.0f}%",
+                         ha='center', fontsize=8, color=color, fontweight='bold')
+
+        ax1.legend(frameon=False, loc='upper left')
+    else:
+        # Fallback: simple bar
+        years = df['year'].astype(int)
+        ax1.bar(years, df['total_downloads'] / 1e6, color='#3498DB',
+                edgecolor='white', width=0.7)
+        max_dl = df['total_downloads'].max() / 1e6
+        ax1.set_ylim(0, max_dl * 1.25)
+        for _, row in df.iterrows():
+            ax1.text(int(row['year']), row['total_downloads'] / 1e6 + max_dl * 0.03,
+                    f"{row['total_downloads']/1e6:.1f}M", ha='center', fontsize=11)
+
     ax1.set_xlabel('Year')
     ax1.set_ylabel('Total Downloads (millions)')
     ax1.set_title('A) Annual Download Volume')
     ax1.spines['top'].set_visible(False)
     ax1.spines['right'].set_visible(False)
-    ax1.set_xticks(years)
-    ax1.set_xticklabels(years)
-
-    max_dl = df['total_downloads'].max() / 1e6
-    ax1.set_ylim(0, max_dl * 1.25)
-    for _, row in df.iterrows():
-        ax1.text(int(row['year']), row['total_downloads'] / 1e6 + max_dl * 0.03,
-                f"{row['total_downloads']/1e6:.1f}M", ha='center', fontsize=11)
+    if has_categories:
+        ax1.set_xticks(years)
+    else:
+        ax1.set_xticks(df['year'].astype(int))
+    ax1.set_xticklabels(ax1.get_xticks())
 
     # Panel B: Unique datasets and locations
-    years = df['year'].astype(int)
-    ax2b = ax2.twinx()
-    l1 = ax2.plot(years, df['unique_datasets'] / 1e3, 'o-', color='#E67E22', label='Unique datasets (k)')
-    l2 = ax2b.plot(years, df['unique_locations'] / 1e3, 's--', color='#9B59B6', label='Unique locations (k)')
-    ax2.set_xlabel('Year')
-    ax2.set_ylabel('Unique Datasets (thousands)', color='#E67E22')
-    ax2b.set_ylabel('Unique Locations (thousands)', color='#9B59B6')
-    ax2.set_title('B) Dataset and Location Growth')
-    ax2.spines['top'].set_visible(False)
-    ax2.set_xticks(years)
-    ax2.set_xticklabels(years)
-
-    lines = l1 + l2
-    labels = [l.get_label() for l in lines]
-    ax2.legend(lines, labels, loc='upper left', frameon=False)
+    if df is not None:
+        years_b = df['year'].astype(int)
+        ax2b = ax2.twinx()
+        l1 = ax2.plot(years_b, df['unique_datasets'] / 1e3, 'o-', color='#E67E22', label='Unique datasets (k)')
+        l2 = ax2b.plot(years_b, df['unique_locations'] / 1e3, 's--', color='#9B59B6', label='Unique locations (k)')
+        ax2.set_xlabel('Year')
+        ax2.set_ylabel('Unique Datasets (thousands)', color='#E67E22')
+        ax2b.set_ylabel('Unique Locations (thousands)', color='#9B59B6')
+        ax2.set_title('B) Dataset and Location Growth')
+        ax2.spines['top'].set_visible(False)
+        ax2.set_xticks(years_b)
+        ax2.set_xticklabels(years_b)
+        lines = l1 + l2
+        labels = [l.get_label() for l in lines]
+        ax2.legend(lines, labels, loc='upper left', frameon=False)
 
     plt.tight_layout()
-    plt.savefig(output_dir / 'figure2_temporal_trends.pdf', format='pdf')
+    plt.savefig(output_dir / 'figure4_temporal_trends.pdf', format='pdf')
     plt.close()
     print("    OK")
 
@@ -431,12 +691,11 @@ def figure_4_protocols(output_dir):
     # Pivot to get protocols as columns
     pivot = df.pivot_table(values='downloads', index='year', columns='protocol', fill_value=0)
 
-    # Order protocols for consistent stacking
-    protocol_order = [p for p in ['FTP', 'HTTP', 'Aspera', 'Globus'] if p in pivot.columns]
+    # Order protocols for consistent stacking (exclude Globus)
+    protocol_order = [p for p in ['FTP', 'HTTP', 'Aspera'] if p in pivot.columns]
     pivot = pivot[protocol_order]
 
-    protocol_colors = {'HTTP': '#3498DB', 'FTP': '#E67E22', 'Aspera': '#2ECC71',
-                       'Globus': '#9B59B6'}
+    protocol_colors = {'HTTP': '#3498DB', 'FTP': '#E67E22', 'Aspera': '#2ECC71'}
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
 
@@ -462,7 +721,7 @@ def figure_4_protocols(output_dir):
         df_m = pd.read_csv(monthly_path)
         df_m['protocol'] = df_m['protocol'].map(lambda x: protocol_names.get(x, x))
         pivot_m = df_m.pivot_table(values='downloads', index='month', columns='protocol', fill_value=0)
-        proto_order_m = [p for p in ['FTP', 'HTTP', 'Aspera', 'Globus'] if p in pivot_m.columns]
+        proto_order_m = [p for p in ['FTP', 'Aspera'] if p in pivot_m.columns]
         pivot_m = pivot_m[proto_order_m]
 
         month_labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -481,20 +740,20 @@ def figure_4_protocols(output_dir):
         ax2.set_xticklabels([month_labels[m - 1] for m in months], rotation=45, ha='right')
         ax2.set_xlabel('Month (2025)')
         ax2.set_ylabel('Downloads (millions)')
-        ax2.set_title('(B) Monthly Protocol Usage in 2025')
+        ax2.set_title('(B) FTP & Aspera Monthly Usage in 2025')
         ax2.legend(title='Protocol', frameon=False)
         ax2.spines['top'].set_visible(False)
         ax2.spines['right'].set_visible(False)
 
     plt.tight_layout()
-    plt.savefig(output_dir / 'figure4_protocol_usage.pdf', format='pdf', bbox_inches='tight')
+    plt.savefig(output_dir / 'figure5_protocol_usage.pdf', format='pdf', bbox_inches='tight')
     plt.close()
     print("    OK")
 
 
 def figure_5_concentration(output_dir):
-    """Figure 5: Rank-frequency log-log (A) + consistency heatmap (B) + citations vs downloads (C)."""
-    print("  Figure 5: Concentration + consistency + citations...")
+    """Figure: Rank-frequency (A), top 20 datasets bar (B), consistency heatmap (C)."""
+    print("  Figure 5: Concentration + top datasets + consistency...")
     stats_path = ANALYSIS_DIR / 'concentration_stats.json'
     top_path = ANALYSIS_DIR / 'top_datasets.csv'
 
@@ -505,7 +764,6 @@ def figure_5_concentration(output_dir):
     with open(stats_path) as f:
         stats = json.load(f)
 
-    # Load rank-frequency data
     if top_path.exists():
         top_all = pd.read_csv(top_path)
         downloads = top_all['total_downloads'].sort_values(ascending=False).values
@@ -513,8 +771,8 @@ def figure_5_concentration(output_dir):
         print("    SKIPPED - no top_datasets.csv")
         return
 
-    # Query yearly data for consistency heatmap
-    conn = _get_filtered_connection()
+    # Query yearly data for consistency heatmap (user-only)
+    conn = _get_filtered_connection(mode='user_only')
     heatmap_data = None
     if conn is not None and PARQUET_PATH.exists():
         try:
@@ -543,10 +801,10 @@ def figure_5_concentration(output_dir):
         except Exception as e:
             print(f"    Warning: heatmap query failed: {e}")
 
-    # Layout: top row = A (rank-freq) + B (heatmap), bottom row = C (citations)
-    fig = plt.figure(figsize=(16, 12))
-    gs = gridspec.GridSpec(2, 2, width_ratios=[0.8, 1.2], height_ratios=[1, 0.75],
-                           wspace=0.3, hspace=0.35)
+    # Layout: top row = A (rank-freq) + B (top 20 bar), bottom = C (heatmap)
+    fig = plt.figure(figsize=(16, 14))
+    gs = gridspec.GridSpec(2, 2, width_ratios=[1, 1], height_ratios=[0.7, 1],
+                           wspace=0.35, hspace=0.3)
     ax1 = fig.add_subplot(gs[0, 0])
     ax2 = fig.add_subplot(gs[0, 1])
     ax3 = fig.add_subplot(gs[1, :])
@@ -562,14 +820,12 @@ def figure_5_concentration(output_dir):
     ax1.spines['top'].set_visible(False)
     ax1.spines['right'].set_visible(False)
 
-    # Mark top 1% boundary
     top1_idx = int(len(downloads) * 0.01)
     if top1_idx > 0:
         ax1.axvline(x=top1_idx, color='red', linestyle='--', alpha=0.7, linewidth=1)
         ax1.text(top1_idx * 1.3, downloads[0] * 0.5, 'Top 1%',
                  color='red', fontsize=11, fontweight='bold')
 
-    # Annotate key statistics
     textstr = (f'Gini = {stats["gini_coefficient"]:.2f}\n'
                f'Top 1%: {stats["top_1pct_downloads_pct"]:.1f}% of DL\n'
                f'Top 10%: {stats["top_10pct_downloads_pct"]:.1f}% of DL\n'
@@ -578,24 +834,46 @@ def figure_5_concentration(output_dir):
              verticalalignment='top', horizontalalignment='right',
              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
-    # ---- Panel B: Consistency heatmap ----
+    # ---- Panel B: Top 20 datasets horizontal bar ----
+    top20 = top_all.nlargest(20, 'total_downloads')
+    n_rows = len(top20)
+    accessions = top20['accession'].values
+    dl_vals = top20['total_downloads'].values
+    n_countries = top20['unique_countries'].values if 'unique_countries' in top20.columns else [0] * n_rows
+
+    colors = plt.cm.viridis(np.linspace(0.3, 0.9, n_rows))
+    bars = ax2.barh(range(n_rows), dl_vals, color=colors, edgecolor='#333333', linewidth=0.3, alpha=0.85)
+    ax2.set_yticks(range(n_rows))
+    ax2.set_yticklabels(accessions, fontsize=9, fontfamily='monospace')
+    ax2.invert_yaxis()
+    ax2.set_xlabel('Total Downloads')
+    ax2.spines['top'].set_visible(False)
+    ax2.spines['right'].set_visible(False)
+    ax2.set_title('(B) Top 20 Most Downloaded Datasets', fontsize=11, fontweight='bold', loc='left')
+
+    for i, (dl, nc) in enumerate(zip(dl_vals, n_countries)):
+        label = f'{dl/1e3:.0f}K'
+        if nc > 0:
+            label += f' ({nc} countries)'
+        ax2.text(dl + dl_vals[0] * 0.02, i, label, va='center', fontsize=8, color='#555555')
+
+    # ---- Panel C: Consistency heatmap ----
     if heatmap_data is not None:
         active_years = (heatmap_data > 0).sum(axis=1)
         data = np.log10(heatmap_data.values + 1)
-        im = ax2.imshow(data, cmap='YlOrRd', aspect='auto', interpolation='nearest')
+        im = ax3.imshow(data, cmap='YlOrRd', aspect='auto', interpolation='nearest')
 
-        ax2.set_xticks(range(len(heatmap_data.columns)))
-        ax2.set_xticklabels(heatmap_data.columns.astype(int), fontsize=11)
-        ax2.set_yticks(range(len(heatmap_data.index)))
+        ax3.set_xticks(range(len(heatmap_data.columns)))
+        ax3.set_xticklabels(heatmap_data.columns.astype(int), fontsize=11)
+        ax3.set_yticks(range(len(heatmap_data.index)))
         ylabels = [f'{acc}  ({active_years[acc]}/{len(heatmap_data.columns)} yrs)'
                    for acc in heatmap_data.index]
-        ax2.set_yticklabels(ylabels, fontsize=8.5)
-        ax2.set_xlabel('Year')
+        ax3.set_yticklabels(ylabels, fontsize=8.5)
+        ax3.set_xlabel('Year')
 
-        cbar = plt.colorbar(im, ax=ax2, fraction=0.03, pad=0.04)
+        cbar = plt.colorbar(im, ax=ax3, fraction=0.02, pad=0.02)
         cbar.set_label('Downloads (log$_{10}$ scale)', fontsize=11)
 
-        # Annotate cells
         for i in range(data.shape[0]):
             for j in range(data.shape[1]):
                 val = int(heatmap_data.iloc[i, j])
@@ -607,83 +885,35 @@ def figure_5_concentration(output_dir):
                     else:
                         txt = str(val)
                     color = 'white' if data[i, j] > 3.5 else 'black'
-                    ax2.text(j, i, txt, ha='center', va='center',
+                    ax3.text(j, i, txt, ha='center', va='center',
                              fontsize=7, color=color, fontweight='bold')
 
-        ax2.set_title('(B) Top 25 Datasets: Download Consistency', fontsize=11, fontweight='bold', loc='left', pad=15)
+        ax3.set_title('(C) Top 25 Datasets: Download Consistency — Users Only (2021-2025)',
+                       fontsize=11, fontweight='bold', loc='left', pad=15)
     else:
-        ax2.text(0.5, 0.5, 'Data not available', ha='center', va='center', transform=ax2.transAxes)
-        ax2.set_title('(B) Top 25 Datasets: Download Consistency', fontsize=11, fontweight='bold', loc='left', pad=15)
+        ax3.text(0.5, 0.5, 'Data not available', ha='center', va='center', transform=ax3.transAxes)
+        ax3.set_title('(C) Download Consistency', fontsize=11, fontweight='bold', loc='left')
 
-    # ---- Panel C: Citations vs Downloads (scatter, log-log) ----
-    from scipy import stats as sp_stats
-    citation_cache = ANALYSIS_DIR / 'europepmc_citations.json'
-    if citation_cache.exists() and top_path.exists():
-        with open(citation_cache) as f:
-            cite_data = json.load(f)
-
-        df_cite = pd.read_csv(top_path).head(50)
-        # n-1 correction: subtract original submission paper
-        df_cite['citation_count'] = df_cite['accession'].map(
-            lambda a: max(cite_data.get(a, 1) - 1, 0))
-        df_cite['years_active'] = df_cite['last_download_year'] - df_cite['first_download_year'] + 1
-        max_years = 5
-        df_cite['consistency_score'] = df_cite['years_active'].clip(upper=max_years) / max_years
-
-        df_cited = df_cite[df_cite['citation_count'] > 0].copy()
-        df_uncited = df_cite[df_cite['citation_count'] == 0].copy()
-
-        sc = ax3.scatter(
-            df_cited['citation_count'], df_cited['total_downloads'],
-            c=df_cited['consistency_score'], cmap='RdYlGn',
-            s=50, alpha=0.7, edgecolors='#333333', linewidths=0.5,
-            vmin=0, vmax=1, zorder=3)
-
-        if len(df_uncited) > 0:
-            ax3.scatter(
-                [0.8] * len(df_uncited), df_uncited['total_downloads'],
-                c='#cccccc', s=30, alpha=0.4, edgecolors='#999999',
-                linewidths=0.3, zorder=2)
-
-        if len(df_cited) > 5:
-            rho, p_val = sp_stats.spearmanr(df_cited['citation_count'], df_cited['total_downloads'])
-            log_x = np.log10(df_cited['citation_count'].values)
-            log_y = np.log10(df_cited['total_downloads'].values)
-            slope, intercept, _, _, _ = sp_stats.linregress(log_x, log_y)
-            x_fit = np.linspace(log_x.min(), log_x.max(), 100)
-            ax3.plot(10**x_fit, 10**(slope * x_fit + intercept), 'r--', alpha=0.6, linewidth=1.5, zorder=4)
-            ax3.text(0.05, 0.95, f'Spearman $\\rho$ = {rho:.3f}\np = {p_val:.2e}\nn = {len(df_cited)}',
-                     transform=ax3.transAxes, fontsize=11, verticalalignment='top',
-                     bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-
-        for _, row in df_cited.nlargest(5, 'total_downloads').iterrows():
-            ax3.annotate(row['accession'], (row['citation_count'], row['total_downloads']),
-                         fontsize=8.5, alpha=0.8, xytext=(5, 5), textcoords='offset points')
-
-        ax3.set_xscale('log')
-        ax3.set_yscale('log')
-        ax3.set_xlabel('EuropePMC Reuse Citation Count')
-        ax3.set_ylabel('Total Downloads (bot-filtered)')
-        cb = plt.colorbar(sc, ax=ax3, shrink=0.8, pad=0.02)
-        cb.set_label('Download Consistency\n(years active / 5)', fontsize=11)
-        ax3.spines['top'].set_visible(False)
-        ax3.spines['right'].set_visible(False)
-        ax3.grid(True, alpha=0.3, which='both')
-        ax3.set_title('(C) Reuse Citations vs Downloads', fontsize=11, fontweight='bold', loc='left')
-    else:
-        ax3.text(0.5, 0.5, 'Citation data not available', ha='center', va='center', transform=ax3.transAxes)
-        ax3.set_title('(C) Reuse Citations vs Downloads', fontsize=11, fontweight='bold', loc='left')
-
-    plt.savefig(output_dir / 'figure5_dataset_concentration.pdf', format='pdf', bbox_inches='tight')
+    plt.savefig(output_dir / 'figure7_dataset_reuse.pdf', format='pdf', bbox_inches='tight')
     plt.close()
     print("    OK")
 
 
 def figure_6_top_datasets(output_dir):
-    """Figure 6: Top 20 most downloaded datasets."""
-    print("  Figure 6: Top datasets...")
-    csv_path = ANALYSIS_DIR / 'top_datasets.csv'
-    if not csv_path.exists():
+    """Figure 6: Top 20 most downloaded datasets (hub-only downloads)."""
+    print("  Figure 6: Top datasets (hub-only)...")
+    # Prefer hub-only CSV; fall back to user-only
+    hub_path = ANALYSIS_DIR / 'top_datasets_hub.csv'
+    user_path = ANALYSIS_DIR / 'top_datasets.csv'
+    if hub_path.exists():
+        csv_path = hub_path
+        source_label = 'Hub'
+        bar_color = COLORS['hub']
+    elif user_path.exists():
+        csv_path = user_path
+        source_label = 'User'
+        bar_color = COLORS['organic']
+    else:
         print("    SKIPPED")
         return
 
@@ -691,8 +921,15 @@ def figure_6_top_datasets(output_dir):
 
     fig, ax = plt.subplots(figsize=(10, 7))
 
+    # Adaptive scale: use thousands or millions depending on data range
+    max_dl = df['total_downloads'].max()
+    if max_dl >= 1e6:
+        scale, unit, fmt = 1e6, 'millions', lambda v: f'{v/1e6:.2f}M'
+    else:
+        scale, unit, fmt = 1e3, 'thousands', lambda v: f'{v/1e3:.1f}K'
+
     y_pos = range(len(df))
-    bars = ax.barh(y_pos, df['total_downloads'] / 1e6, color='#2ECC71', edgecolor='white')
+    bars = ax.barh(y_pos, df['total_downloads'] / scale, color=bar_color, edgecolor='white')
 
     labels = []
     for _, row in df.iterrows():
@@ -705,12 +942,13 @@ def figure_6_top_datasets(output_dir):
     ax.set_yticks(y_pos)
     ax.set_yticklabels(labels, fontsize=8)
     ax.invert_yaxis()
-    ax.set_xlabel('Total Downloads (millions)')
-    ax.set_title('Top 20 Most Downloaded PRIDE Datasets')
+    ax.set_xlabel(f'Total {source_label} Downloads ({unit})')
+    ax.set_title(f'Top 20 Most Downloaded PRIDE Datasets ({source_label} Downloads)')
 
+    x_margin = max_dl / scale * 0.02
     for bar, val in zip(bars, df['total_downloads']):
-        ax.text(bar.get_width() + 0.1, bar.get_y() + bar.get_height() / 2,
-                f'{val/1e6:.2f}M', va='center', fontsize=7)
+        ax.text(bar.get_width() + x_margin, bar.get_y() + bar.get_height() / 2,
+                fmt(val), va='center', fontsize=7)
 
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -783,25 +1021,36 @@ def supplementary_figure_agreement(output_dir):
     print("    OK")
 
 
-def _get_filtered_connection():
-    """Get DuckDB connection with bot-filtered locations."""
-    labels_path = CLASSIFICATION_DIR / 'pride_classification_final.csv'
+def _get_filtered_connection(mode='user_only'):
+    """Get DuckDB connection with filtered locations.
+
+    Args:
+        mode: 'user_only' (exclude bot+hub), 'hub_only', 'no_bot' (exclude bot only),
+              or 'all' (no filter).
+    """
+    labels_path = CLASSIFICATION_DIR / 'location_analysis.csv'
     if not labels_path.exists():
         return None
-    labels_df = pd.read_csv(labels_path)
-    if 'final_label' in labels_df.columns:
-        non_bot = labels_df[labels_df['final_label'] != 'bot'][['geo_location']].drop_duplicates()
-    elif 'is_bot' in labels_df.columns:
-        non_bot = labels_df[~labels_df['is_bot']][['geo_location']].drop_duplicates()
-    else:
+    labels_df = pd.read_csv(labels_path, low_memory=False)
+    if 'behavior_type' not in labels_df.columns:
         return None
+
+    if mode == 'user_only':
+        filtered = labels_df[labels_df['behavior_type'] == 'user'][['geo_location']].drop_duplicates()
+    elif mode == 'hub_only':
+        filtered = labels_df[labels_df['behavior_type'] == 'hub'][['geo_location']].drop_duplicates()
+    elif mode == 'no_bot':
+        filtered = labels_df[labels_df['behavior_type'] != 'bot'][['geo_location']].drop_duplicates()
+    else:
+        filtered = labels_df[['geo_location']].drop_duplicates()
+
     conn = duckdb.connect()
     conn.execute("PRAGMA memory_limit='4GB'")
     tmp = os.path.abspath('./duckdb-tmp/')
     os.makedirs(tmp, exist_ok=True)
     conn.execute(f"PRAGMA temp_directory='{tmp}'")
     conn.execute("PRAGMA threads=2")
-    conn.register('_cl', non_bot)
+    conn.register('_cl', filtered)
     conn.execute("CREATE TEMP TABLE clean_locations AS SELECT * FROM _cl")
     return conn
 
@@ -820,45 +1069,25 @@ def _query_country_yearly_trends(conn, countries):
     return df
 
 
-def figure_7_bubble_chart(output_dir):
-    """Figure 7: Country bubble chart + European & LMIC download trends."""
-    print("  Figure 7: Country bubble chart with regional trends...")
-    csv_path = ANALYSIS_DIR / 'country_bubble_data.csv'
-    if not csv_path.exists():
-        print("    SKIPPED - no bubble data")
-        return
+def _draw_bubble_panel(ax, df, title, show_colorbar=True,
+                       priority_labels=None, max_labels=15, exclude_labels=None,
+                       bold_labels=True):
+    """Draw a country bubble chart on the given axes.
 
-    df = pd.read_csv(csv_path)
-    if df.empty:
-        print("    SKIPPED - empty data")
-        return
-
-    # Query yearly trends from parquet
-    conn = _get_filtered_connection()
-    has_trends = conn is not None and PARQUET_PATH.exists()
-    eu_df = lmic_df = None
-    if has_trends:
-        try:
-            eu_df = _query_country_yearly_trends(conn, EUROPEAN_COUNTRIES)
-            lmic_df = _query_country_yearly_trends(conn, LMIC_COUNTRIES)
-            conn.close()
-        except Exception as e:
-            print(f"    Warning: could not query trends: {e}")
-            has_trends = False
-
-    # Layout: bubble chart on left (spanning full height), two trend panels stacked on right
-    fig = plt.figure(figsize=(18, 9))
-    gs = gridspec.GridSpec(2, 2, width_ratios=[1.2, 1], hspace=0.35, wspace=0.3)
-    ax_bubble = fig.add_subplot(gs[:, 0])  # left, spans both rows
-    ax_europe = fig.add_subplot(gs[0, 1])  # top-right
-    ax_lmic = fig.add_subplot(gs[1, 1])    # bottom-right
-
-    # ---- Panel A: Bubble chart ----
+    Parameters
+    ----------
+    priority_labels : list or None
+        Countries that must always be labeled (shown first).
+    max_labels : int
+        Maximum number of labels to show in total.
+    exclude_labels : set or None
+        Countries to never label.
+    """
     dl_per_user = df['dl_per_user'].values
     size_raw = np.clip(dl_per_user, 1, 2000)
     sizes = (size_raw / size_raw.max()) * 800 + 15
 
-    scatter = ax_bubble.scatter(
+    scatter = ax.scatter(
         df['unique_users'], df['total_downloads'],
         s=sizes,
         c=dl_per_user, cmap='viridis',
@@ -867,26 +1096,46 @@ def figure_7_bubble_chart(output_dir):
         zorder=3,
     )
 
-    ax_bubble.set_xscale('log')
-    ax_bubble.set_yscale('log')
-    ax_bubble.set_xlabel('Unique Users (log scale)')
-    ax_bubble.set_ylabel('Total Downloads (log scale)')
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.set_xlabel('Unique Users (log scale)')
+    ax.set_ylabel('Total Downloads (log scale)')
 
-    plt.colorbar(scatter, ax=ax_bubble, label='Downloads per User', fraction=0.03, pad=0.04)
+    if show_colorbar:
+        plt.colorbar(scatter, ax=ax, label='Downloads per User', fraction=0.03, pad=0.04)
+
+    if priority_labels is None:
+        priority_labels = []
+    if exclude_labels is None:
+        exclude_labels = set()
+
+    # Build label list: priority countries first, then top by downloads
+    priority_set = set(priority_labels)
+    sorted_df = df.sort_values('total_downloads', ascending=False)
+    countries_to_label = list(priority_labels)  # keep priority order
+    for _, row in sorted_df.iterrows():
+        name = row['country']
+        if name not in priority_set and name not in exclude_labels:
+            countries_to_label.append(name)
+    countries_to_label = countries_to_label[:max_labels]
+    label_set = set(countries_to_label)
 
     labeled = []
-    for _, row in df.iterrows():
+    for _, row in sorted_df.iterrows():
         x, y = row['unique_users'], row['total_downloads']
         name = row['country']
+        if name not in label_set:
+            continue
         ha, x_off, y_off = 'left', 8, 4
         if x > 50000:
             ha, x_off = 'right', -8
+        # Check overlap with already placed labels
         for lx, ly in labeled:
-            if abs(np.log10(x) - np.log10(lx)) < 0.15 and abs(np.log10(y) - np.log10(ly)) < 0.08:
-                y_off += 8
+            if abs(np.log10(x) - np.log10(lx)) < 0.2 and abs(np.log10(y) - np.log10(ly)) < 0.12:
+                y_off += 10
         fontsize = 9.5 if row['total_downloads'] > 500000 else 8.5
-        fontweight = 'bold' if row['total_downloads'] > 1000000 else 'normal'
-        ax_bubble.annotate(
+        fontweight = 'bold' if bold_labels and row['total_downloads'] > 1000000 else 'normal'
+        ax.annotate(
             name, (x, y),
             fontsize=fontsize, fontweight=fontweight,
             ha=ha, va='bottom',
@@ -899,22 +1148,71 @@ def figure_7_bubble_chart(output_dir):
     for val in legend_sizes:
         s = (np.clip(val, 1, 2000) / np.clip(dl_per_user, 1, 2000).max()) * 800 + 15
         legend_bubbles.append(
-            ax_bubble.scatter([], [], s=s, c='gray', alpha=0.5, edgecolors='black', linewidth=0.5)
+            ax.scatter([], [], s=s, c='gray', alpha=0.5, edgecolors='black', linewidth=0.5)
         )
-    ax_bubble.legend(
+    ax.legend(
         legend_bubbles, [f'{v}' for v in legend_sizes],
         title='DL/User (size)', loc='upper left',
         frameon=True, framealpha=0.9, fontsize=10, title_fontsize=10,
         labelspacing=1.5, borderpad=1.2,
     )
-    ax_bubble.spines['top'].set_visible(False)
-    ax_bubble.spines['right'].set_visible(False)
-    ax_bubble.grid(True, alpha=0.2, which='both')
-    ax_bubble.set_title('(A) Downloads vs. Users by Country', fontsize=11, fontweight='bold', loc='left')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.grid(True, alpha=0.2, which='both')
+    ax.set_title(title, fontsize=11, fontweight='bold', loc='left')
+
+
+def figure_7_bubble_chart(output_dir):
+    """Figure 7: Country bubble chart (A user, C hub) + European & LMIC trends."""
+    print("  Figure 7: Country bubble chart with regional trends...")
+    csv_path = ANALYSIS_DIR / 'country_bubble_data.csv'
+    if not csv_path.exists():
+        print("    SKIPPED - no bubble data")
+        return
+
+    df = pd.read_csv(csv_path)
+    if df.empty:
+        print("    SKIPPED - empty data")
+        return
+    df = df[df['country'] != 'Russia']
+
+    # Load hub bubble data if available
+    hub_path = ANALYSIS_DIR / 'country_bubble_hub_data.csv'
+    hub_df = pd.read_csv(hub_path) if hub_path.exists() else None
+    if hub_df is not None:
+        hub_df = hub_df[~hub_df['country'].str.contains('%{', na=False)]
+        hub_df = hub_df[hub_df['country'] != 'Russia']
+
+    # Query yearly trends from parquet (user-only)
+    conn = _get_filtered_connection(mode='user_only')
+    has_trends = conn is not None and PARQUET_PATH.exists()
+    eu_df = lmic_df = None
+    if has_trends:
+        try:
+            eu_df = _query_country_yearly_trends(conn, EUROPEAN_COUNTRIES)
+            lmic_df = _query_country_yearly_trends(conn, LMIC_COUNTRIES)
+            conn.close()
+        except Exception as e:
+            print(f"    Warning: could not query trends: {e}")
+            has_trends = False
+
+    # Layout: 2x2 grid — A (user bubble), B (EU trends), C (hub bubble), D (LMIC trends)
+    fig = plt.figure(figsize=(20, 14))
+    gs = gridspec.GridSpec(2, 2, width_ratios=[1.2, 1], hspace=0.35, wspace=0.3)
+    ax_bubble = fig.add_subplot(gs[0, 0])   # top-left
+    ax_europe = fig.add_subplot(gs[0, 1])   # top-right
+    ax_hub = fig.add_subplot(gs[1, 0])      # bottom-left
+    ax_lmic = fig.add_subplot(gs[1, 1])     # bottom-right
+
+    # ---- Panel A: User bubble chart (select ~15 labels to avoid overlap) ----
+    _draw_bubble_panel(ax_bubble, df, '(A) Downloads vs. Users by Country',
+                       priority_labels=['United States', 'United Kingdom', 'Germany',
+                                        'China', 'Canada', 'Japan', 'France',
+                                        'India', 'Australia', 'Brazil'],
+                       max_labels=15)
 
     # ---- Panel B: European trends ----
     if has_trends and eu_df is not None and not eu_df.empty:
-        # Show absolute downloads (in millions) per year
         eu_colors = plt.cm.tab20(np.linspace(0, 1, len(EUROPEAN_COUNTRIES)))
         for i, country in enumerate(EUROPEAN_COUNTRIES):
             cdf = eu_df[eu_df['country'] == country].sort_values('year')
@@ -936,7 +1234,6 @@ def figure_7_bubble_chart(output_dir):
 
     # ---- Panel C: LMIC trends ----
     if has_trends and lmic_df is not None and not lmic_df.empty:
-        # Show top countries by total downloads across years
         top_lmic = lmic_df.groupby('country')['downloads'].sum().nlargest(15).index.tolist()
         lmic_colors = plt.cm.tab20(np.linspace(0, 1, len(top_lmic)))
         for i, country in enumerate(top_lmic):
@@ -947,7 +1244,7 @@ def figure_7_bubble_chart(output_dir):
                              color=lmic_colors[i])
         ax_lmic.set_xlabel('Year')
         ax_lmic.set_ylabel('Downloads (thousands)')
-        ax_lmic.set_title('(C) Low/Middle Income Countries', fontsize=11, fontweight='bold', loc='left')
+        ax_lmic.set_title('(D) Low/Middle Income Countries', fontsize=11, fontweight='bold', loc='left')
         ax_lmic.legend(loc='upper left', fontsize=8, ncol=3, frameon=False)
         ax_lmic.spines['top'].set_visible(False)
         ax_lmic.spines['right'].set_visible(False)
@@ -955,9 +1252,21 @@ def figure_7_bubble_chart(output_dir):
         ax_lmic.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
     else:
         ax_lmic.text(0.5, 0.5, 'Data not available', ha='center', va='center', transform=ax_lmic.transAxes)
-        ax_lmic.set_title('(C) Low/Middle Income Countries', fontsize=11, fontweight='bold', loc='left')
+        ax_lmic.set_title('(D) Low/Middle Income Countries', fontsize=11, fontweight='bold', loc='left')
 
-    plt.savefig(output_dir / 'figure7_country_bubble.pdf', format='pdf', bbox_inches='tight')
+    # ---- Panel C: Hub-only bubble chart ----
+    if hub_df is not None and not hub_df.empty:
+        _draw_bubble_panel(ax_hub, hub_df, '(C) Hub Downloads by Country',
+                           priority_labels=['Belgium', 'United States', 'China',
+                                            'Denmark', 'United Kingdom', 'Germany',
+                                            'Japan', 'South Korea', 'France'],
+                           max_labels=12, exclude_labels={'Panama'},
+                           bold_labels=False)
+    else:
+        ax_hub.text(0.5, 0.5, 'Hub data not available', ha='center', va='center', transform=ax_hub.transAxes)
+        ax_hub.set_title('(C) Hub Downloads by Country', fontsize=11, fontweight='bold', loc='left')
+
+    plt.savefig(output_dir / 'figure8_country_bubble.pdf', format='pdf', bbox_inches='tight')
     plt.close()
     print("    OK")
 
@@ -965,7 +1274,7 @@ def figure_7_bubble_chart(output_dir):
 def figure_dataset_consistency(output_dir):
     """Figure: Top dataset download consistency heatmap over years."""
     print("  Dataset consistency heatmap...")
-    conn = _get_filtered_connection()
+    conn = _get_filtered_connection(mode='user_only')
     if conn is None or not PARQUET_PATH.exists():
         print("    SKIPPED - no data")
         return
@@ -1118,7 +1427,7 @@ def figure_filetype_by_region(output_dir):
     ax.legend(fontsize=9, frameon=False)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    ax.set_title('(A) File Type Downloads by Region', fontsize=11, fontweight='bold', loc='left')
+    ax.set_title('(A) File Type Downloads by Region (Users Only)', fontsize=11, fontweight='bold', loc='left')
     ax.grid(axis='y', alpha=0.2)
 
     # ---- Panel B: Stacked horizontal bars for key categories only ----
@@ -1176,13 +1485,15 @@ def figure_filetype_by_region(output_dir):
 def figure_hub_distribution(output_dir):
     """Figure: Hub geographic distribution and characteristics."""
     print("  Hub distribution figure...")
-    csv_path = CLASSIFICATION_DIR / 'pride_classification_final.csv'
+    csv_path = CLASSIFICATION_DIR / 'location_analysis.csv'
     if not csv_path.exists():
         print("    SKIPPED - no classification data")
         return
 
-    df = pd.read_csv(csv_path)
-    if 'final_label' in df.columns:
+    df = pd.read_csv(csv_path, low_memory=False)
+    if 'behavior_type' in df.columns:
+        hubs = df[df['behavior_type'] == 'hub'].copy()
+    elif 'final_label' in df.columns:
         hubs = df[df['final_label'] == 'hub'].copy()
     elif 'is_hub' in df.columns:
         hubs = df[df['is_hub'] == True].copy()
@@ -1192,12 +1503,12 @@ def figure_hub_distribution(output_dir):
     if hubs.empty:
         print("    SKIPPED - no hubs")
         return
+    hubs = hubs[hubs['country'] != 'Russia']
 
-    fig = plt.figure(figsize=(18, 6.5))
-    gs = gridspec.GridSpec(1, 3, width_ratios=[1.1, 1, 1], wspace=0.35)
+    fig = plt.figure(figsize=(14, 6.5))
+    gs = gridspec.GridSpec(1, 2, width_ratios=[1.1, 1], wspace=0.35)
     ax_map = fig.add_subplot(gs[0, 0])
     ax_bar = fig.add_subplot(gs[0, 1])
-    ax_scatter = fig.add_subplot(gs[0, 2])
 
     # ---- Panel A: World scatter of hub locations ----
     lats, lons = [], []
@@ -1256,35 +1567,13 @@ def figure_hub_distribution(output_dir):
     ax_bar.spines['right'].set_visible(False)
     ax_bar.set_title('(B) Hubs per Country', fontsize=11, fontweight='bold', loc='left')
 
-    # Annotate with download totals
+    # Annotate bars with hub count and download volume
     for i, (country, count) in enumerate(country_counts.items()):
         dl = country_downloads.get(country, 0)
-        label = f'{dl/1e6:.1f}M' if dl >= 100000 else f'{dl/1e3:.0f}K'
-        ax_bar.text(count + 0.5, i, label, va='center', fontsize=9, color='gray')
+        dl_label = f'{dl/1e6:.1f}M DL' if dl >= 100000 else f'{dl/1e3:.0f}K DL'
+        ax_bar.text(count + 0.5, i, f'{count} ({dl_label})', va='center', fontsize=8, color='gray')
 
-    # ---- Panel C: Hub users vs downloads (log-log) ----
-    ax_scatter.scatter(hubs['unique_users'], hubs['total_downloads'],
-                       s=40, c='#3498DB', alpha=0.6, edgecolors='navy', linewidth=0.4, zorder=3)
-    ax_scatter.set_xscale('log')
-    ax_scatter.set_yscale('log')
-    ax_scatter.set_xlabel('Unique Users (log scale)')
-    ax_scatter.set_ylabel('Total Downloads (log scale)')
-    ax_scatter.spines['top'].set_visible(False)
-    ax_scatter.spines['right'].set_visible(False)
-    ax_scatter.grid(True, alpha=0.2, which='both')
-    ax_scatter.set_title('(C) Hub Characteristics', fontsize=11, fontweight='bold', loc='left')
-
-    # Label top hubs
-    top_hubs = hubs.nlargest(5, 'total_downloads')
-    for _, row in top_hubs.iterrows():
-        city = row['city'] if pd.notna(row['city']) and row['city'] else ''
-        country = row['country'] if pd.notna(row['country']) else ''
-        label = f"{city}, {country}" if city else country
-        ax_scatter.annotate(label, (row['unique_users'], row['total_downloads']),
-                            fontsize=9, fontweight='bold',
-                            xytext=(6, 4), textcoords='offset points')
-
-    plt.savefig(output_dir / 'figure_hub_distribution.pdf', format='pdf', bbox_inches='tight')
+    plt.savefig(output_dir / 'figure2_hub_geography.pdf', format='pdf', bbox_inches='tight')
     plt.close()
     print("    OK")
 
@@ -1297,6 +1586,7 @@ def main():
     print(f"Output: {FIGURES_DIR}")
     print("=" * 70)
 
+    figure_1_pipeline_overview(FIGURES_DIR)
     figure_bot_detection_overview(FIGURES_DIR)
     figure_1_world_map(FIGURES_DIR)
     figure_1b_regional(FIGURES_DIR)

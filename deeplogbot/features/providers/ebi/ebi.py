@@ -750,9 +750,71 @@ def _extract_location_features_core(
     df['users_per_active_hour'] = df['unique_users'] / df['active_hours'].replace(0, 1)
     if schema.project_field:
         df['projects_per_user'] = df['unique_projects'] / df['unique_users'].replace(0, 1)
+
+        # Project concentration features:
+        # - top_project_concentration: fraction of DL from single most-downloaded project
+        # - top3_project_concentration: fraction of DL from top 3 projects
+        # - project_hhi: Herfindahl-Hirschman Index (sum of squared DL shares)
+        #   HHI close to 1.0 = all downloads from one project (suspicious)
+        #   HHI close to 0.0 = downloads spread across many projects (legitimate hub)
+        logger.info("  Step 2b/4: Project concentration features...")
+        top_proj_query = f"""
+        WITH project_counts AS (
+            SELECT
+                {schema.location_field} as geo_location,
+                {schema.project_field} as accession,
+                COUNT(*) as project_dl
+            FROM read_parquet('{escaped_path}')
+            WHERE {schema.location_field} IS NOT NULL
+            AND {schema.project_field} IS NOT NULL
+            AND {schema.timestamp_field} IS NOT NULL
+            AND {year_expr} >= {schema.min_year}
+            GROUP BY {schema.location_field}, {schema.project_field}
+        ),
+        loc_totals AS (
+            SELECT
+                geo_location,
+                SUM(project_dl) as total_project_dl
+            FROM project_counts
+            GROUP BY geo_location
+        ),
+        ranked AS (
+            SELECT
+                pc.geo_location,
+                pc.project_dl,
+                lt.total_project_dl,
+                ROW_NUMBER() OVER (PARTITION BY pc.geo_location ORDER BY pc.project_dl DESC) as rn
+            FROM project_counts pc
+            JOIN loc_totals lt ON pc.geo_location = lt.geo_location
+        ),
+        agg AS (
+            SELECT
+                geo_location,
+                total_project_dl,
+                MAX(CASE WHEN rn = 1 THEN project_dl ELSE 0 END) as top1_dl,
+                SUM(CASE WHEN rn <= 3 THEN project_dl ELSE 0 END) as top3_dl,
+                SUM(POWER(CAST(project_dl AS DOUBLE) / NULLIF(total_project_dl, 0), 2)) as hhi
+            FROM ranked
+            GROUP BY geo_location, total_project_dl
+        )
+        SELECT
+            geo_location,
+            CAST(top1_dl AS DOUBLE) / NULLIF(total_project_dl, 0) as top_project_concentration,
+            CAST(top3_dl AS DOUBLE) / NULLIF(total_project_dl, 0) as top3_project_concentration,
+            hhi as project_hhi
+        FROM agg
+        """
+        top_proj_df = conn.execute(top_proj_query).df()
+        df = df.merge(top_proj_df, on='geo_location', how='left')
+        df['top_project_concentration'] = df['top_project_concentration'].fillna(0.0)
+        df['top3_project_concentration'] = df['top3_project_concentration'].fillna(0.0)
+        df['project_hhi'] = df['project_hhi'].fillna(0.0)
     else:
         df['projects_per_user'] = 0
-    
+        df['top_project_concentration'] = 0.0
+        df['top3_project_concentration'] = 0.0
+        df['project_hhi'] = 0.0
+
     # Step 3: Apply feature extractors
     logger.info("  Step 3/4: Applying feature extractors...")
     

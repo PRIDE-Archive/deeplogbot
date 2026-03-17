@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Bot detection and traffic classification for scientific data repository logs"
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
 authors = [
     {name = "Yasset Perez-Riverol", email = "yperez@ebi.ac.uk"}
 ]
@@ -16,7 +16,7 @@ keywords = ["bot-detection", "proteomics", "PRIDE", "download-analysis", "anomal
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -44,9 +44,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ypriverol/deeplogbot"
-Repository = "https://github.com/ypriverol/deeplogbot"
-Issues = "https://github.com/ypriverol/deeplogbot/issues"
+Homepage = "https://github.com/ypriverol/logghostbuster"
+Repository = "https://github.com/ypriverol/logghostbuster"
+Issues = "https://github.com/ypriverol/logghostbuster/issues"
 
 [project.scripts]
 deeplogbot = "deeplogbot.main:main"

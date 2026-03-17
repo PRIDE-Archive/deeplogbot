@@ -3,13 +3,52 @@ duckdb:
   max_temp_directory_size: "10GiB"
   temp_directory: "./duckdb-tmp/"
 
+# LLM-refined seed corrections for the deep classification pipeline
+# Set to null or remove to disable LLM seed injection
+llm_corrections:
+  path: "data/llm_corrections.csv"
+  label_column: "claude_evaluation"
+  location_column: "geo_location"
+  weight: 0.95
+
+# Gold standard labels for supervised training (v9 pipeline)
+gold_standard:
+  path: "data/gold_standard_labels.csv"
+  label_column: "label"
+  location_column: "geo_location"
+  split_column: "split"
+
+# Training mode: "gold_standard" (v9) or "semi_supervised" (v8 legacy)
+training_mode: "gold_standard"
+
 # Classification rules for bot and hub detection
 classification:
+  # Fallback thresholds for rule-based classifier when no pattern matches
+  fallback_thresholds:
+    organic_max_users: 100       # Stage 1: <= this -> organic, > this -> automated
+    bot_min_users: 500           # Stage 2: > this + low DL/user -> bot
+    bot_max_dl_per_user: 100     # Stage 2: < this + many users -> bot
+    hub_min_dl_per_user: 100     # Stage 2: >= this -> legitimate_automation
+
   # Hub protection rules - locations matching these are NEVER classified as bots
   hub_protection:
     # Very high downloads per user indicates institutional mirror
     high_dl_per_user:
       min_downloads_per_user: 500
+      max_users: 200
+    # Research institution hubs - moderate user count but very high DL/user
+    # Catches universities/institutes (e.g. Ghent, Incheon, Copenhagen, Barcelona)
+    # that have 200-1000 users downloading hundreds of files each over years
+    research_institution:
+      max_users: 1000
+      min_downloads_per_user: 200
+      min_years_span: 3
+    # Large research hubs - many users but very high DL/user over multiple years
+    # Catches large national facilities (e.g. Beijing, Tokyo, Singapore, Edinburgh)
+    # Key: DL/user > 200 distinguishes from bot farms (which have 3-15 DL/user)
+    large_research_hub:
+      min_downloads_per_user: 200
+      min_years_span: 3
     # Few users with high download activity (research labs)
     few_users_high_dl:
       max_users: 100
@@ -22,168 +61,6 @@ classification:
     very_few_users:
       max_users: 10
       min_downloads_per_user: 200
-
-  # Bot detection rules
-  bot_detection:
-    # Ground truth bots - highest confidence
-    ground_truth:
-      min_users: 10000
-      max_downloads_per_user: 10
-    # Large scale bot patterns
-    large_scale:
-      min_users: 5000
-      max_downloads_per_user: 100
-    # Many users with low downloads per user
-    many_users_low_dl:
-      min_users: 1000
-      max_downloads_per_user: 20
-    # Very many users with moderate downloads
-    very_many_users_moderate_dl:
-      min_users: 5000
-      min_downloads_per_user: 20
-      max_downloads_per_user: 100
-    # Moderate users with suspicious pattern
-    moderate_users_suspicious:
-      min_users: 500
-      max_users: 5000
-      min_downloads_per_user: 10
-      max_downloads_per_user: 50
-    # Bot head override protection
-    bot_head_override:
-      min_users: 100
-      max_downloads_per_user: 100
-
-  # Download hub thresholds
-  download_hub:
-    # Definite hub - very high downloads per user
-    definite:
-      min_downloads_per_user: 1000
-    # Standard hub threshold
-    standard:
-      min_downloads_per_user: 500
-      max_users: 100
-
-  # Independent user thresholds
-  independent_user:
-    max_users: 5
-    max_downloads_per_user: 3
-
-  # Stratified pre-filtering thresholds (for deep architecture)
-  # These are used to quickly filter obvious cases before deep learning
-  stratified_prefiltering:
-    # Obvious bot patterns - locations matching these are immediately classified as bots
-    obvious_bots:
-      min_users: 2000  # >2000 users = obvious bot
-      # Note: Single users with high downloads are excluded (they're hubs, not bots)
-      # Coordinated bot activity: many users with LOW downloads per user
-      many_users_low_dl:
-        min_users: 500
-        max_downloads_per_user: 100  # <100 DL/user (not >100!)
-      large_scale_low_dl:
-        min_users: 100
-        max_downloads_per_user: 200  # <200 DL/user (not >200!)
-    
-    # Obvious legitimate patterns - locations matching these are immediately classified as independent users
-    obvious_legitimate:
-      max_users: 5
-      max_downloads_per_user: 3
-      max_total_downloads: 50
-      max_anomaly_score: 0.15
-
-  # Bot score weights for smart label generation
-  bot_score_weights:
-    many_users_low_dl: 0.7
-    very_many_users_moderate_dl: 0.6
-    moderate_users_suspicious: 0.4
-    high_anomaly: 0.2
-    very_high_anomaly: 0.15
-    non_working_hours: 0.25
-    low_entropy: 0.15
-    rule_based_bot: 0.5
-
-  # Thresholds for bot detection
-  bot_thresholds:
-    high_anomaly_score: 0.2
-    very_high_anomaly_score: 0.25
-    low_working_hours_ratio: 0.3
-    min_total_downloads: 1000
-    low_entropy_quantile: 0.2
-
-  # Rule-based classification patterns (used by --classification-method rules)
-  # These patterns are used for rule-based classification with pattern matching
-  rule_based:
-    bots:
-      description: >
-        Bot rules: anomalous locations with many users and low or moderate downloads
-        per user. These rules are designed to be stable over time and do not depend
-        on latest-year spikes or 'new location' heuristics.
-      require_anomaly: true
-      patterns:
-        - id: high_users_low_dl
-          description: High user count with very low downloads per user.
-          unique_users:
-            min: 7000
-          downloads_per_user:
-            max: 12
-
-        - id: very_high_users_moderate_dl
-          description: Very high user count with moderate downloads per user.
-          unique_users:
-            min: 25000
-          downloads_per_user:
-            min: 10
-            max: 100
-
-        - id: high_users_moderate_low_dl
-          description: High user count with moderate-low downloads per user.
-          unique_users:
-            min: 15000
-          downloads_per_user:
-            min: 8
-            max: 80
-
-    hubs:
-      description: >
-        Hub rules: anomalous locations with very high downloads per user (mirrors)
-        or high total volume with moderate downloads per user and regular working
-        hours (research institutions).
-      require_anomaly: true
-      patterns:
-        - id: mirrors
-          description: Very high downloads per user (mirrors/single-user hubs).
-          downloads_per_user:
-            min: 500
-
-        - id: research_institutions
-          description: High total downloads with moderate downloads per user and
-            regular working hours.
-          total_downloads:
-            min: 150000
-          downloads_per_user:
-            min: 50
-            max: 500
-          unique_users:
-            min: 1000
-          working_hours_ratio:
-            min: 0.25
-
-    independent_users:
-      description: >
-        Legitimate locations with very few users and very low downloads per user.
-      patterns:
-        - id: low_users_low_dl
-          description: Few users and low downloads per user with low anomaly score.
-          unique_users:
-            max: 5
-          downloads_per_user:
-            max: 3
-          anomaly_score:
-            max: 0.1
-
-    other:
-      description: >
-        Anomalous locations that do not match any BOT or DOWNLOAD_HUB pattern are
-        currently labeled as 'other'. These are candidates for future refinement.
 
   # ==========================================================================
   # HIERARCHICAL CLASSIFICATION TAXONOMY
@@ -205,7 +82,6 @@ classification:
   behavior_type:
     organic:
       description: "Human-like download patterns with irregular timing and working hours activity"
-      # A location is classified as ORGANIC if ANY of these patterns match
       patterns:
         - id: working_hours_human
           description: "Activity concentrated during working hours with irregular patterns"
@@ -229,7 +105,6 @@ classification:
 
     automated:
       description: "Programmatic download patterns with regular timing or high coordination"
-      # A location is classified as AUTOMATED if ANY of these patterns match
       patterns:
         - id: high_regularity
           description: "Very regular download intervals (automated scripts)"
@@ -336,21 +211,3 @@ classification:
             min: 0.6
           downloads_per_user:
             min: 50
-
-# ==========================================================================
-# DEEP RECONCILIATION CONFIGURATION
-# ==========================================================================
-# Configuration for the deep classification reconciliation step.
-# The deep method processes ALL locations through the full pipeline,
-# treating pre-filter output as soft priors rather than hard decisions.
-# A reconciliation step resolves disagreements between pre-filter and pipeline.
-# ==========================================================================
-
-deep_reconciliation:
-  # Pipeline confidence needed to override a prefilter decision
-  override_threshold: 0.7
-  # Stricter bar for overriding obvious_bot → organic (high-risk override)
-  strict_override_threshold: 0.8
-  # Controls the steepness of the sigmoid used for soft prior computation
-  prior_sigmoid_steepness: 5.0
-

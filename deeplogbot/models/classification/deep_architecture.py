@@ -1,22 +1,23 @@
 """Learned deep classification for bot / hub / organic detection.
 
-Replaces the previous rule-heavy approach (70+ threshold constants, ~4300 lines)
-with a learned pipeline:
+Supports two training modes (set via config.yaml ``training_mode``):
 
-  1. **Seed Selection** – identifies high-confidence organic / bot / hub locations
-     using simple behavioural heuristics (training data only, not final decisions).
-  2. **Organic VAE** – learns the manifold of normal download behaviour; high
-     reconstruction error ⇒ anomalous.
-  3. **Deep Isolation Forest** – non-linear anomaly detection via neural
-     projections (DeepOD) with sklearn fallback.
-  4. **Temporal Consistency** – modified z-score spike detection without fixed
-     thresholds.
-  5. **Fusion Meta-learner** – gradient-boosted classifier combining all anomaly
-     signals with Platt-calibrated probabilities.
+**gold_standard** (v9, default):
+  1. Feature Extraction – 33 behavioral features per location.
+  2. Gold-Standard Supervised Training – GradientBoosting trained on
+     934 blind multi-LLM consensus labels with class balancing.
+  3. Hub Protection – rule-based structural override.
+  4. Finalize – insufficient evidence filter + boolean columns.
 
-The only hand-tuned rules remaining are hub-protection (strong structural signal).
+**semi_supervised** (v8 legacy):
+  1. Heuristic Seed Selection – organic / bot / hub seeds from rules.
+  2. LLM Seed Refinement – optional injection of LLM corrections.
+  3. Fusion Meta-learner – gradient-boosted classifier on seeds.
+  4. Hub Protection – rule-based structural override.
+  5. Finalize – insufficient evidence filter + boolean columns.
 """
 
+import os
 import numpy as np
 import pandas as pd
 from typing import Optional, List, Tuple
@@ -29,16 +30,11 @@ from .post_classification import (
 )
 
 from .seed_selection import select_organic_seed, select_bot_seed, select_hub_seed
-from .organic_vae import (
-    train_organic_vae,
-    compute_vae_anomaly_scores,
-    train_deep_isolation_forest,
-)
-from .temporal_consistency import compute_temporal_anomaly
 from .fusion import (
     LABEL_ORGANIC, LABEL_BOT, LABEL_HUB,
     prepare_fusion_features,
     train_meta_learner,
+    train_meta_learner_gold_standard,
     predict_with_confidence,
     get_feature_importances,
 )
@@ -64,8 +60,155 @@ BEHAVIORAL_FEATURE_COLS = [
     'single_download_user_ratio', 'power_user_ratio',
     'session_duration_cv', 'inter_session_regularity',
     'momentum_score', 'recent_activity_ratio',
-    'unique_projects',
+    'unique_projects', 'top_project_concentration',
+    'top3_project_concentration', 'project_hhi',
 ]
+
+
+# ---------------------------------------------------------------------------
+# LLM seed correction helpers
+# ---------------------------------------------------------------------------
+
+def load_llm_corrections_from_config() -> Optional[pd.DataFrame]:
+    """Load LLM corrections from the path specified in config.yaml.
+
+    Returns:
+        DataFrame with LLM corrections, or None if not configured/found.
+    """
+    from ...config import APP_CONFIG
+
+    llm_cfg = APP_CONFIG.get('llm_corrections')
+    if not llm_cfg or not llm_cfg.get('path'):
+        return None
+
+    path = llm_cfg['path']
+    # Resolve relative paths from project root
+    if not os.path.isabs(path):
+        # Walk up from this file to find project root (contains config.yaml)
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))))
+        path = os.path.join(project_root, path)
+
+    if not os.path.exists(path):
+        logger.warning(f"    LLM corrections file not found: {path}")
+        return None
+
+    df = pd.read_csv(path)
+    label_col = llm_cfg.get('label_column', 'claude_evaluation')
+    loc_col = llm_cfg.get('location_column', 'geo_location')
+
+    if label_col not in df.columns or loc_col not in df.columns:
+        logger.warning(f"    LLM corrections missing required columns: {label_col}, {loc_col}")
+        return None
+
+    logger.info(f"    Loaded {len(df)} LLM corrections from {path}")
+    return df
+
+
+def inject_llm_seeds(
+    df: pd.DataFrame,
+    organic_seed: pd.DataFrame,
+    bot_seed: pd.DataFrame,
+    hub_seed: pd.DataFrame,
+    llm_corrections: pd.DataFrame,
+    label_column: str = 'claude_evaluation',
+    location_column: str = 'geo_location',
+    weight: float = 0.95,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Inject LLM-annotated corrections into seed sets.
+
+    For each correction, removes the location from any existing seed set
+    and adds it to the seed set matching the LLM label.
+
+    Args:
+        df: Full location DataFrame (to look up indices).
+        organic_seed, bot_seed, hub_seed: Current seed DataFrames.
+        llm_corrections: DataFrame with LLM labels.
+        label_column: Column name containing LLM labels.
+        location_column: Column name containing geo_location identifiers.
+        weight: Seed confidence weight for LLM corrections.
+
+    Returns:
+        Updated (organic_seed, bot_seed, hub_seed) tuple.
+    """
+    valid_labels = {'organic', 'bot', 'hub'}
+    n_override, n_added = 0, 0
+
+    if location_column not in df.columns:
+        logger.warning(f"    Cannot inject LLM seeds: '{location_column}' not in df")
+        return organic_seed, bot_seed, hub_seed
+
+    # Build geo_location → df index lookup for fast matching
+    geo_to_idx = {}
+    for idx, geo in df[location_column].items():
+        if geo not in geo_to_idx:
+            geo_to_idx[geo] = idx
+
+    seed_sets = {'organic': organic_seed, 'bot': bot_seed, 'hub': hub_seed}
+
+    for _, corr in llm_corrections.iterrows():
+        geo = corr.get(location_column)
+        llm_label = corr.get(label_column)
+        if geo is None or llm_label not in valid_labels:
+            continue
+
+        loc_idx = geo_to_idx.get(geo)
+        if loc_idx is None:
+            continue
+
+        # Remove from any existing seed set
+        for name in list(seed_sets.keys()):
+            if loc_idx in seed_sets[name].index:
+                if llm_label != name:
+                    n_override += 1
+                seed_sets[name] = seed_sets[name].drop(loc_idx)
+
+        # Add to the correct seed set
+        row = df.loc[[loc_idx]].copy()
+        row['seed_confidence'] = weight
+        seed_sets[llm_label] = pd.concat([seed_sets[llm_label], row])
+        n_added += 1
+
+    # Deduplicate indices (in case of repeated geo_locations)
+    for name in seed_sets:
+        seed_sets[name] = seed_sets[name][~seed_sets[name].index.duplicated(keep='last')]
+
+    logger.info(f"    LLM corrections: {n_added} injected, {n_override} overrides")
+    logger.info(f"    Updated seeds: {len(seed_sets['organic'])} organic, "
+                f"{len(seed_sets['bot'])} bot, {len(seed_sets['hub'])} hub")
+
+    return seed_sets['organic'], seed_sets['bot'], seed_sets['hub']
+
+
+# ---------------------------------------------------------------------------
+# Gold-standard label loading
+# ---------------------------------------------------------------------------
+
+def load_gold_standard() -> Optional[pd.DataFrame]:
+    """Load gold-standard labels from config.
+
+    Returns:
+        DataFrame with columns [geo_location, label, split], or None.
+    """
+    from ...config import APP_CONFIG
+
+    gs_cfg = APP_CONFIG.get('gold_standard')
+    if not gs_cfg or not gs_cfg.get('path'):
+        return None
+
+    path = gs_cfg['path']
+    if not os.path.isabs(path):
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))))
+        path = os.path.join(project_root, path)
+
+    if not os.path.exists(path):
+        logger.warning(f"    Gold standard file not found: {path}")
+        return None
+
+    df = pd.read_csv(path)
+    logger.info(f"    Loaded {len(df)} gold-standard labels from {path}")
+    return df
 
 
 # ===================================================================
@@ -79,26 +222,36 @@ def classify_locations_deep(
     feature_importance_output_dir: Optional[str] = None,
     input_parquet: Optional[str] = None,
     conn=None,
+    llm_corrections: Optional[pd.DataFrame] = None,
+    training_mode: str = 'gold_standard',
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Classify locations using the learned deep pipeline.
-
-    Pipeline: Seed → VAE → Deep IF → Temporal → Fusion → Hub Protection.
 
     Args:
         df: DataFrame with location features.
         feature_columns: Available feature column names.
         compute_feature_importance: Log and optionally save feature importances.
         feature_importance_output_dir: Directory to save importance CSVs.
-        input_parquet: Path to raw parquet (for temporal spike detection).
-        conn: DuckDB connection (for temporal spike detection).
+        input_parquet: Path to raw parquet (unused, kept for API compat).
+        conn: DuckDB connection (unused, kept for API compat).
+        llm_corrections: Optional DataFrame with LLM-annotated seed corrections.
+            If None, attempts to load from config.yaml llm_corrections.path.
+        training_mode: 'gold_standard' (v9, train on consensus labels only)
+            or 'semi_supervised' (v8, heuristic seeds + LLM injection).
 
     Returns:
         (classified_df, empty_cluster_df) matching the legacy contract.
     """
-    logger.info("=" * 70)
-    logger.info("LEARNED DEEP CLASSIFICATION")
-    logger.info("  Pipeline: Seed → VAE → Deep IF → Temporal → Fusion")
-    logger.info("=" * 70)
+    if training_mode == 'gold_standard':
+        logger.info("=" * 70)
+        logger.info("GOLD-STANDARD CLASSIFICATION (v9)")
+        logger.info("  Pipeline: Gold-Standard Training → Hub Protection → Finalize")
+        logger.info("=" * 70)
+    else:
+        logger.info("=" * 70)
+        logger.info("SEMI-SUPERVISED CLASSIFICATION (v8)")
+        logger.info("  Pipeline: Seed → LLM Refinement → Fusion → Hub Protection")
+        logger.info("=" * 70)
 
     n_locations = len(df)
     logger.info(f"  Locations: {n_locations:,}")
@@ -120,175 +273,233 @@ def classify_locations_deep(
             df['total_downloads'] = df['unique_users'] * df['downloads_per_user']
 
     # ------------------------------------------------------------------
-    # 1. Seed selection
-    # ------------------------------------------------------------------
-    logger.info("\n  Phase 1: Seed selection ...")
-    organic_seed = select_organic_seed(df)
-    bot_seed = select_bot_seed(df)
-    hub_seed = select_hub_seed(df)
-
-    n_organic_seed = len(organic_seed)
-    n_bot_seed = len(bot_seed)
-    n_hub_seed = len(hub_seed)
-    logger.info(f"    Seeds: {n_organic_seed} organic, {n_bot_seed} bot, {n_hub_seed} hub")
-
-    if n_organic_seed < 50:
-        logger.warning("    Very few organic seeds – VAE training may be unreliable")
-    if n_bot_seed < 10:
-        logger.warning("    Very few bot seeds – meta-learner may under-detect bots")
-
-    # ------------------------------------------------------------------
-    # 2. Prepare feature matrix for all locations
+    # Build feature matrix for ALL locations
     # ------------------------------------------------------------------
     available_behavioral = [c for c in BEHAVIORAL_FEATURE_COLS if c in df.columns]
-    # Also include any feature_columns not already covered
-    extra = [c for c in feature_columns
-             if c in df.columns and c not in available_behavioral
-             and c != 'time_series_features_present']
-    all_feature_cols = list(dict.fromkeys(available_behavioral + extra))
-
+    # Only use BEHAVIORAL_FEATURE_COLS — do NOT add extra columns which may
+    # include classification outputs (prob_bot, is_bot, etc.) causing circularity.
+    all_feature_cols = available_behavioral
     logger.info(f"    Using {len(all_feature_cols)} behavioural features")
 
-    X_all = df[all_feature_cols].fillna(0).replace([np.inf, -np.inf], 0).values
+    X_fusion_all = prepare_fusion_features(df, behavioral_cols=all_feature_cols)
 
-    # ------------------------------------------------------------------
-    # 3. Organic VAE
-    # ------------------------------------------------------------------
-    logger.info("\n  Phase 2: Training Organic VAE ...")
-    organic_idx = organic_seed.index
-    X_organic = df.loc[organic_idx, all_feature_cols].fillna(0).replace(
-        [np.inf, -np.inf], 0).values
-    organic_weights = organic_seed['seed_confidence'].values
+    if training_mode == 'gold_standard':
+        # ============================================================
+        # v9: Gold-standard supervised training
+        # ============================================================
+        from ...config import APP_CONFIG
 
-    vae_scores = np.zeros(n_locations)
-    vae_latent = np.zeros((n_locations, 16))
-
-    if len(X_organic) >= 30:
-        try:
-            vae_model, vae_scaler = train_organic_vae(
-                X_organic, weights=organic_weights,
-                latent_dim=16, epochs=100, batch_size=256,
+        logger.info("\n  Phase 1: Loading gold-standard labels ...")
+        gs_df = load_gold_standard()
+        if gs_df is None:
+            raise ValueError(
+                "Gold standard file not found. Set training_mode='semi_supervised' "
+                "or provide gold_standard.path in config.yaml"
             )
-            vae_scores, vae_latent = compute_vae_anomaly_scores(
-                vae_model, vae_scaler, X_all,
+
+        gs_cfg = APP_CONFIG.get('gold_standard', {})
+        loc_col = gs_cfg.get('location_column', 'geo_location')
+        label_col = gs_cfg.get('label_column', 'label')
+        split_col = gs_cfg.get('split_column', 'split')
+
+        # Validate required columns exist
+        for col in [loc_col, label_col, split_col]:
+            if col not in gs_df.columns:
+                raise ValueError(
+                    f"Gold standard file missing required column '{col}'. "
+                    f"Available columns: {list(gs_df.columns)}"
+                )
+
+        # Validate labels
+        label_map = {'bot': LABEL_BOT, 'hub': LABEL_HUB, 'organic': LABEL_ORGANIC}
+        invalid_labels = set(gs_df[label_col].unique()) - set(label_map.keys())
+        if invalid_labels:
+            raise ValueError(
+                f"Gold standard contains invalid labels: {invalid_labels}. "
+                f"Expected: {list(label_map.keys())}"
             )
-            logger.info(f"    VAE anomaly scores: mean={vae_scores.mean():.4f}, "
-                        f"std={vae_scores.std():.4f}, max={vae_scores.max():.4f}")
-        except Exception as e:
-            logger.warning(f"    VAE training failed ({e}), using zeros")
+
+        # Match gold-standard locations to df indices
+        train_gs = gs_df[gs_df[split_col] == 'train']
+
+        geo_to_idx = {}
+        for idx, geo in df[loc_col].items():
+            if geo not in geo_to_idx:
+                geo_to_idx[geo] = idx
+
+        train_indices = []
+        train_labels = []
+        for _, row in train_gs.iterrows():
+            loc_idx = geo_to_idx.get(row[loc_col])
+            if loc_idx is not None:
+                train_indices.append(df.index.get_loc(loc_idx))
+                train_labels.append(label_map[row[label_col]])
+
+        if not train_indices:
+            raise ValueError(
+                f"No gold-standard training locations matched the feature data. "
+                f"Check that '{loc_col}' values in the gold-standard file match the data."
+            )
+
+        train_indices = np.array(train_indices)
+        train_labels = np.array(train_labels)
+
+        n_bot = (train_labels == LABEL_BOT).sum()
+        n_hub = (train_labels == LABEL_HUB).sum()
+        n_org = (train_labels == LABEL_ORGANIC).sum()
+        logger.info(f"    Training set: {len(train_indices)} gold-standard labels "
+                    f"({n_org} organic, {n_bot} bot, {n_hub} hub)")
+
+        logger.info("\n  Phase 2: Training gold-standard meta-learner ...")
+        X_train = X_fusion_all[train_indices]
+        meta_model, meta_scaler = train_meta_learner_gold_standard(X_train, train_labels)
+
+        # Evaluate on held-out test split
+        test_gs = gs_df[gs_df[split_col] == 'test']
+        test_indices, test_labels = [], []
+        for _, row in test_gs.iterrows():
+            loc_idx = geo_to_idx.get(row[loc_col])
+            if loc_idx is not None:
+                test_indices.append(df.index.get_loc(loc_idx))
+                test_labels.append(label_map[row[label_col]])
+
+        if test_indices:
+            test_indices = np.array(test_indices)
+            test_labels = np.array(test_labels)
+            X_test = X_fusion_all[test_indices]
+            test_preds, test_conf, _ = predict_with_confidence(
+                meta_model, meta_scaler, X_test)
+
+            from sklearn.metrics import accuracy_score, classification_report
+            test_acc = accuracy_score(test_labels, test_preds)
+            logger.info(f"\n  Test-split evaluation ({len(test_labels)} samples):")
+            logger.info(f"    Accuracy: {test_acc:.1%}")
+            target_names = ['organic', 'bot', 'hub']
+            report = classification_report(
+                test_labels, test_preds, target_names=target_names,
+                digits=3, zero_division=0)
+            for line in report.strip().split('\n'):
+                logger.info(f"    {line}")
+
+            # Save evaluation results
+            if feature_importance_output_dir:
+                os.makedirs(feature_importance_output_dir, exist_ok=True)
+                eval_results = {
+                    'test_accuracy': float(test_acc),
+                    'test_samples': len(test_labels),
+                    'per_class': {
+                        'bot': int((test_labels == LABEL_BOT).sum()),
+                        'hub': int((test_labels == LABEL_HUB).sum()),
+                        'organic': int((test_labels == LABEL_ORGANIC).sum()),
+                    }
+                }
+                import json
+                with open(os.path.join(feature_importance_output_dir,
+                                       'test_evaluation.json'), 'w') as f:
+                    json.dump(eval_results, f, indent=2)
+
     else:
-        logger.warning("    Not enough organic seeds for VAE, skipping")
+        # ============================================================
+        # v8: Semi-supervised (heuristic seeds + LLM injection)
+        # ============================================================
+        logger.info("\n  Phase 1: Seed selection ...")
+        organic_seed = select_organic_seed(df)
+        bot_seed = select_bot_seed(df)
+        hub_seed = select_hub_seed(df)
+
+        # Resolve seed overlaps: hub > bot > organic priority
+        bot_hub_overlap = bot_seed.index.intersection(hub_seed.index)
+        if len(bot_hub_overlap) > 0:
+            bot_seed = bot_seed.drop(bot_hub_overlap)
+            logger.info(f"    Removed {len(bot_hub_overlap)} bot seeds that overlap with hub seeds")
+
+        bot_organic_overlap = bot_seed.index.intersection(organic_seed.index)
+        if len(bot_organic_overlap) > 0:
+            organic_seed = organic_seed.drop(bot_organic_overlap)
+            logger.info(f"    Removed {len(bot_organic_overlap)} organic seeds that overlap with bot seeds")
+
+        logger.info(f"    Seeds: {len(organic_seed)} organic, {len(bot_seed)} bot, {len(hub_seed)} hub")
+
+        # LLM seed refinement
+        if llm_corrections is None:
+            llm_corrections = load_llm_corrections_from_config()
+        if llm_corrections is not None and len(llm_corrections) > 0:
+            logger.info("\n  Phase 2: LLM seed refinement ...")
+            from ...config import APP_CONFIG
+            llm_cfg = APP_CONFIG.get('llm_corrections', {})
+            organic_seed, bot_seed, hub_seed = inject_llm_seeds(
+                df, organic_seed, bot_seed, hub_seed, llm_corrections,
+                label_column=llm_cfg.get('label_column', 'claude_evaluation'),
+                location_column=llm_cfg.get('location_column', 'geo_location'),
+                weight=llm_cfg.get('weight', 0.95),
+            )
+
+        # Assemble training data from seeds
+        seed_indices, seed_labels, seed_weights = [], [], []
+        for idx in organic_seed.index:
+            seed_indices.append(df.index.get_loc(idx))
+            seed_labels.append(LABEL_ORGANIC)
+            seed_weights.append(organic_seed.loc[idx, 'seed_confidence'])
+        for idx in bot_seed.index:
+            seed_indices.append(df.index.get_loc(idx))
+            seed_labels.append(LABEL_BOT)
+            seed_weights.append(bot_seed.loc[idx, 'seed_confidence'])
+        for idx in hub_seed.index:
+            seed_indices.append(df.index.get_loc(idx))
+            seed_labels.append(LABEL_HUB)
+            seed_weights.append(hub_seed.loc[idx, 'seed_confidence'])
+
+        seed_indices = np.array(seed_indices)
+        seed_labels = np.array(seed_labels)
+        seed_weights = np.array(seed_weights)
+
+        logger.info("\n  Phase 3: Training fusion meta-learner ...")
+        logger.info(f"    Training set: {len(seed_indices)} seeds "
+                    f"({(seed_labels == LABEL_ORGANIC).sum()} organic, "
+                    f"{(seed_labels == LABEL_BOT).sum()} bot, "
+                    f"{(seed_labels == LABEL_HUB).sum()} hub)")
+
+        X_train = X_fusion_all[seed_indices]
+        meta_model, meta_scaler = train_meta_learner(X_train, seed_labels, weights=seed_weights)
 
     # ------------------------------------------------------------------
-    # 4. Deep Isolation Forest
+    # Predict on ALL locations (shared by both modes)
     # ------------------------------------------------------------------
-    logger.info("\n  Phase 3: Deep Isolation Forest (all locations) ...")
-    try:
-        dif_scores, _ = train_deep_isolation_forest(X_all)
-        logger.info(f"    DIF anomaly scores: mean={dif_scores.mean():.4f}, "
-                    f"std={dif_scores.std():.4f}")
-    except Exception as e:
-        logger.warning(f"    Deep IF failed ({e}), using zeros")
-        dif_scores = np.zeros(n_locations)
-
-    # ------------------------------------------------------------------
-    # 5. Temporal consistency
-    # ------------------------------------------------------------------
-    logger.info("\n  Phase 4: Temporal consistency ...")
-    df = compute_temporal_anomaly(df, conn=conn, input_parquet=input_parquet)
-    temporal_scores = df['temporal_anomaly_score'].fillna(0).values
-
-    # ------------------------------------------------------------------
-    # 6. Fusion meta-learner
-    # ------------------------------------------------------------------
-    logger.info("\n  Phase 5: Training fusion meta-learner ...")
-
-    # Assemble training data from seeds
-    seed_indices = []
-    seed_labels = []
-    seed_weights = []
-
-    for idx in organic_seed.index:
-        seed_indices.append(df.index.get_loc(idx))
-        seed_labels.append(LABEL_ORGANIC)
-        seed_weights.append(organic_seed.loc[idx, 'seed_confidence'])
-
-    for idx in bot_seed.index:
-        seed_indices.append(df.index.get_loc(idx))
-        seed_labels.append(LABEL_BOT)
-        seed_weights.append(bot_seed.loc[idx, 'seed_confidence'])
-
-    for idx in hub_seed.index:
-        seed_indices.append(df.index.get_loc(idx))
-        seed_labels.append(LABEL_HUB)
-        seed_weights.append(hub_seed.loc[idx, 'seed_confidence'])
-
-    seed_indices = np.array(seed_indices)
-    seed_labels = np.array(seed_labels)
-    seed_weights = np.array(seed_weights)
-
-    logger.info(f"    Training set: {len(seed_indices)} seeds "
-                f"({(seed_labels == LABEL_ORGANIC).sum()} organic, "
-                f"{(seed_labels == LABEL_BOT).sum()} bot, "
-                f"{(seed_labels == LABEL_HUB).sum()} hub)")
-
-    # Build fusion features for ALL locations
-    X_fusion_all = prepare_fusion_features(
-        df, vae_scores=vae_scores, vae_latent=vae_latent,
-        dif_scores=dif_scores, temporal_scores=temporal_scores,
-        behavioral_cols=all_feature_cols,
-    )
-
-    # Extract training subset
-    X_train = X_fusion_all[seed_indices]
-    y_train = seed_labels
-
-    # Train
-    meta_model, meta_scaler = train_meta_learner(
-        X_train, y_train, weights=seed_weights,
-    )
-
-    # Predict on ALL locations
     labels, confidences, probas = predict_with_confidence(
         meta_model, meta_scaler, X_fusion_all,
     )
 
     # Log feature importances
     if compute_feature_importance:
-        # Build feature names: behavioral cols + vae_score + vae_latent_0..15 + dif_score + temporal_score
         feat_names = list(all_feature_cols)
-        feat_names.append('vae_anomaly_score')
-        feat_names.extend([f'vae_latent_{i}' for i in range(vae_latent.shape[1])])
-        feat_names.append('dif_anomaly_score')
-        feat_names.append('temporal_anomaly_score')
         imp_df = get_feature_importances(meta_model, feat_names)
         if not imp_df.empty:
             logger.info("\n  Top 15 feature importances:")
             for _, row in imp_df.head(15).iterrows():
                 logger.info(f"    {row['feature']:40s} {row['importance']:.4f}")
             if feature_importance_output_dir:
-                import os
                 os.makedirs(feature_importance_output_dir, exist_ok=True)
                 imp_df.to_csv(os.path.join(feature_importance_output_dir,
                                            'fusion_importances.csv'), index=False)
 
     # ------------------------------------------------------------------
-    # 7. Map fusion labels → hierarchical classification
+    # Map fusion labels → hierarchical classification
     # ------------------------------------------------------------------
-    logger.info("\n  Phase 6: Mapping predictions to hierarchical labels ...")
+    phase_label = "Phase 3" if training_mode == 'gold_standard' else "Phase 4"
+    logger.info(f"\n  {phase_label}: Mapping predictions + Hub protection ...")
 
     df['classification_confidence'] = confidences
     df['prob_organic'] = probas[:, LABEL_ORGANIC]
     df['prob_bot'] = probas[:, LABEL_BOT]
     df['prob_hub'] = probas[:, LABEL_HUB]
 
-    # Organic
+    # User (organic)
     organic_mask = labels == LABEL_ORGANIC
     df.loc[df.index[organic_mask], 'user_category'] = 'normal'
-    df.loc[df.index[organic_mask], 'behavior_type'] = 'organic'
+    df.loc[df.index[organic_mask], 'behavior_type'] = 'user'
     df.loc[df.index[organic_mask], 'automation_category'] = None
 
-    # Refine organic → independent_user for small locations
+    # Refine → independent_user for small locations
     if 'unique_users' in df.columns and 'downloads_per_user' in df.columns:
         indep_mask = (
             organic_mask &
@@ -300,14 +511,14 @@ def classify_locations_deep(
     # Bot
     bot_mask = labels == LABEL_BOT
     df.loc[df.index[bot_mask], 'user_category'] = 'bot'
-    df.loc[df.index[bot_mask], 'behavior_type'] = 'automated'
+    df.loc[df.index[bot_mask], 'behavior_type'] = 'bot'
     df.loc[df.index[bot_mask], 'automation_category'] = 'bot'
     df.loc[df.index[bot_mask], 'is_bot_neural'] = True
 
     # Hub
     hub_mask = labels == LABEL_HUB
     df.loc[df.index[hub_mask], 'user_category'] = 'download_hub'
-    df.loc[df.index[hub_mask], 'behavior_type'] = 'automated'
+    df.loc[df.index[hub_mask], 'behavior_type'] = 'hub'
     df.loc[df.index[hub_mask], 'automation_category'] = 'legitimate_automation'
 
     # Flag low-confidence predictions for review
@@ -315,19 +526,24 @@ def classify_locations_deep(
 
     log_prediction_summary(df, labels, confidences)
 
-    # ------------------------------------------------------------------
-    # 8. Hub protection (structural override)
-    # ------------------------------------------------------------------
-    logger.info("\n  Phase 7: Hub protection ...")
+    # Hub protection (structural override)
+    logger.info(f"\n  {phase_label}b: Hub protection ...")
     df = apply_hub_protection(df)
 
     # ------------------------------------------------------------------
-    # 9. Derive boolean columns & finalize
+    # Derive boolean columns & finalize
     # ------------------------------------------------------------------
-    logger.info("\n  Phase 8: Deriving final labels ...")
+    final_phase = "Phase 4" if training_mode == 'gold_standard' else "Phase 5"
+    logger.info(f"\n  {final_phase}: Deriving final labels ...")
+
+    if 'total_downloads' in df.columns:
+        insufficient_mask = df['total_downloads'] < 3
+        df.loc[insufficient_mask, 'behavior_type'] = 'insufficient_evidence'
+        df.loc[insufficient_mask, 'automation_category'] = None
+
     df['is_bot'] = df['automation_category'] == 'bot'
     df['is_hub'] = df['automation_category'] == 'legitimate_automation'
-    df['is_organic'] = df['behavior_type'] == 'organic'
+    df['is_organic'] = df['behavior_type'] == 'user'
     df['is_download_hub'] = df['is_hub']  # Legacy alias
     log_hierarchical_summary(df)
 

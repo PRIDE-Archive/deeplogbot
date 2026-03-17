@@ -125,7 +125,7 @@ def run_method(method: str, sample_file: str, output_dir: str) -> dict:
         # Count by automation_category
         n_bots = (df["automation_category"] == "bot").sum() if "automation_category" in df.columns else 0
         n_hubs = (df["automation_category"] == "legitimate_automation").sum() if "automation_category" in df.columns else 0
-        n_organic = n - n_bots - n_hubs
+        n_user = n - n_bots - n_hubs
 
         total_dl = df["total_downloads"].sum() if "total_downloads" in df.columns else 0
         bot_dl = df.loc[df["automation_category"] == "bot", "total_downloads"].sum() if "automation_category" in df.columns and "total_downloads" in df.columns else 0
@@ -142,8 +142,8 @@ def run_method(method: str, sample_file: str, output_dir: str) -> dict:
             "bot_pct": round(n_bots / n * 100, 1) if n else 0,
             "hubs": int(n_hubs),
             "hub_pct": round(n_hubs / n * 100, 1) if n else 0,
-            "organic": int(n_organic),
-            "organic_pct": round(n_organic / n * 100, 1) if n else 0,
+            "user": int(n_user),
+            "user_pct": round(n_user / n * 100, 1) if n else 0,
             "total_downloads": int(total_dl),
             "bot_downloads": int(bot_dl),
             "bot_dl_pct": round(bot_dl / total_dl * 100, 1) if total_dl else 0,
@@ -197,8 +197,8 @@ def print_comparison(results: list):
     row("Bot locations %", "bot_pct")
     row("Hub locations", "hubs")
     row("Hub locations %", "hub_pct")
-    row("Organic locations", "organic")
-    row("Organic locations %", "organic_pct")
+    row("User locations", "user")
+    row("User locations %", "user_pct")
     print("-" * 90)
     row("Total downloads", "total_downloads")
     row("Bot downloads", "bot_downloads")

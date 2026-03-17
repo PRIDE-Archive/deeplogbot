@@ -1,9 +1,7 @@
-"""Fusion meta-learner for combining anomaly signals.
+"""Fusion meta-learner for classification.
 
-Replaces hand-coded override/reconciliation logic with a learned
-combination of anomaly scores from multiple sources (VAE, IF, temporal,
-behavioral features). Uses gradient boosting with confidence-weighted
-training and Platt-calibrated probabilities.
+Combines behavioral features using gradient boosting with
+confidence-weighted training and Platt-calibrated probabilities.
 """
 
 import logging
@@ -12,6 +10,7 @@ import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -23,53 +22,25 @@ LABEL_NAMES = {0: 'organic', 1: 'bot', 2: 'hub'}
 
 
 def prepare_fusion_features(df: pd.DataFrame,
-                            vae_scores: np.ndarray = None,
-                            vae_latent: np.ndarray = None,
-                            dif_scores: np.ndarray = None,
-                            temporal_scores: np.ndarray = None,
                             behavioral_cols: list = None) -> np.ndarray:
     """Assemble feature matrix for the meta-learner.
 
     Args:
         df: DataFrame with location features
-        vae_scores: VAE reconstruction error (n_samples,)
-        vae_latent: VAE latent features (n_samples, latent_dim)
-        dif_scores: Deep Isolation Forest anomaly scores (n_samples,)
-        temporal_scores: Temporal anomaly scores (n_samples,)
         behavioral_cols: List of behavioral feature column names to include
 
     Returns:
         (n_samples, n_features) feature matrix
     """
-    parts = []
-
-    # Core behavioral features
-    if behavioral_cols:
-        available = [c for c in behavioral_cols if c in df.columns]
-        if available:
-            feat_df = df[available].fillna(0).replace([np.inf, -np.inf], 0)
-            parts.append(feat_df.values)
-
-    # VAE anomaly score
-    if vae_scores is not None:
-        parts.append(vae_scores.reshape(-1, 1))
-
-    # VAE latent representation
-    if vae_latent is not None:
-        parts.append(vae_latent)
-
-    # Deep IF anomaly score
-    if dif_scores is not None:
-        parts.append(dif_scores.reshape(-1, 1))
-
-    # Temporal anomaly score
-    if temporal_scores is not None:
-        parts.append(temporal_scores.reshape(-1, 1))
-
-    if not parts:
+    if not behavioral_cols:
         raise ValueError("No features provided for fusion")
 
-    return np.hstack(parts)
+    available = [c for c in behavioral_cols if c in df.columns]
+    if not available:
+        raise ValueError("No features provided for fusion")
+
+    feat_df = df[available].fillna(0).replace([np.inf, -np.inf], 0)
+    return feat_df.values
 
 
 def train_meta_learner(X_train: np.ndarray, y_train: np.ndarray,
@@ -85,10 +56,7 @@ def train_meta_learner(X_train: np.ndarray, y_train: np.ndarray,
         (calibrated_model, scaler) tuple
     """
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_train)
-
-    # Handle NaN/inf
-    X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
+    X_clean = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
 
     base_model = GradientBoostingClassifier(
         n_estimators=200,
@@ -98,17 +66,21 @@ def train_meta_learner(X_train: np.ndarray, y_train: np.ndarray,
         min_samples_leaf=10,
         random_state=42,
     )
-    base_model.fit(X_scaled, y_train, sample_weight=weights)
 
-    # Calibrate probabilities (Platt scaling)
+    # Wrap scaler + model in Pipeline so CalibratedClassifierCV
+    # re-fits the scaler inside each CV fold, avoiding data leakage
+    pipe = Pipeline([('scaler', scaler), ('clf', base_model)])
+    pipe.fit(X_clean, y_train, clf__sample_weight=weights)
+
+    # Calibrate probabilities (Platt scaling with proper CV)
     try:
-        calibrated = CalibratedClassifierCV(base_model, cv='prefit', method='sigmoid')
-        calibrated.fit(X_scaled, y_train, sample_weight=weights)
-        logger.info("  Meta-learner trained with Platt calibration")
-        return calibrated, scaler
+        calibrated = CalibratedClassifierCV(pipe, cv=5, method='sigmoid')
+        calibrated.fit(X_clean, y_train)
+        logger.info("  Meta-learner trained with Platt calibration (cv=5)")
+        return calibrated, None
     except Exception as e:
         logger.warning(f"  Calibration failed ({e}), using uncalibrated model")
-        return base_model, scaler
+        return pipe, None
 
 
 def predict_with_confidence(model, scaler: StandardScaler,
@@ -126,15 +98,16 @@ def predict_with_confidence(model, scaler: StandardScaler,
           confidences: (n_samples,) confidence of the prediction (0-1)
           probabilities: (n_samples, 3) class probabilities
     """
-    X_scaled = scaler.transform(X)
-    X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
+    X_clean = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+    if scaler is not None:
+        X_clean = scaler.transform(X_clean)
 
-    probas = model.predict_proba(X_scaled)
+    probas = model.predict_proba(X_clean)
 
     # Ensure all 3 classes are represented in output
     if probas.shape[1] < 3:
         # Pad with zeros for missing classes
-        full_probas = np.zeros((len(X_scaled), 3))
+        full_probas = np.zeros((len(X_clean), 3))
         classes = model.classes_ if hasattr(model, 'classes_') else np.arange(probas.shape[1])
         for i, c in enumerate(classes):
             if c < 3:
@@ -157,12 +130,16 @@ def get_feature_importances(model, feature_names: list = None) -> pd.DataFrame:
     Returns:
         DataFrame with feature importance rankings
     """
-    # Unwrap CalibratedClassifierCV if needed
+    # Unwrap CalibratedClassifierCV / Pipeline if needed
     base = model
     if hasattr(model, 'estimator'):
         base = model.estimator
     elif hasattr(model, 'calibrated_classifiers_'):
         base = model.calibrated_classifiers_[0].estimator
+
+    # Unwrap Pipeline to get the classifier step
+    if hasattr(base, 'named_steps'):
+        base = base.named_steps.get('clf', base)
 
     if not hasattr(base, 'feature_importances_'):
         logger.warning("Model does not support feature importances")
@@ -178,3 +155,56 @@ def get_feature_importances(model, feature_names: list = None) -> pd.DataFrame:
     }).sort_values('importance', ascending=False)
 
     return imp_df
+
+
+def train_meta_learner_gold_standard(X_train: np.ndarray,
+                                      y_train: np.ndarray) -> tuple:
+    """Train meta-learner using gold-standard labels with class balancing.
+
+    Unlike train_meta_learner() which uses per-sample confidence weights
+    from heuristic seeds, this uses inverse-frequency class weights computed
+    from the gold-standard label distribution.
+
+    Args:
+        X_train: Training features from gold-standard labeled locations
+        y_train: Labels (0=organic, 1=bot, 2=hub)
+
+    Returns:
+        (calibrated_model, scaler) tuple
+    """
+    from sklearn.utils.class_weight import compute_class_weight
+
+    X_clean = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # Compute balanced class weights
+    classes = np.unique(y_train)
+    class_weights = compute_class_weight('balanced', classes=classes, y=y_train)
+    weight_map = dict(zip(classes, class_weights))
+    sample_weights = np.array([weight_map[label] for label in y_train])
+
+    logger.info(f"  Class weights: {', '.join(f'{LABEL_NAMES.get(c, c)}={w:.3f}' for c, w in weight_map.items())}")
+
+    scaler = StandardScaler()
+    base_model = GradientBoostingClassifier(
+        n_estimators=200,
+        max_depth=5,
+        learning_rate=0.1,
+        subsample=0.8,
+        min_samples_leaf=10,
+        random_state=42,
+    )
+
+    # Wrap scaler + model in Pipeline so CalibratedClassifierCV
+    # re-fits the scaler inside each CV fold, avoiding data leakage
+    pipe = Pipeline([('scaler', scaler), ('clf', base_model)])
+    pipe.fit(X_clean, y_train, clf__sample_weight=sample_weights)
+
+    # Calibrate probabilities (Platt scaling with proper CV)
+    try:
+        calibrated = CalibratedClassifierCV(pipe, cv=5, method='sigmoid')
+        calibrated.fit(X_clean, y_train)
+        logger.info("  Gold-standard meta-learner trained with Platt calibration (cv=5)")
+        return calibrated, None
+    except Exception as e:
+        logger.warning(f"  Calibration failed ({e}), using uncalibrated model")
+        return pipe, None

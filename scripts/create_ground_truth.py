@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Create ground truth dataset for benchmarking classification methods.
 
-Uses high-confidence heuristics to label locations as bot, hub, or organic.
+Uses high-confidence heuristics to label locations as bot, hub, or user.
 These labels serve as pseudo-ground-truth for evaluating classifier agreement
 and performance.
 
@@ -105,7 +105,7 @@ def create_ground_truth_labels(df: pd.DataFrame) -> pd.DataFrame:
     Categories:
     - definite_bot: Very clear bot patterns (many users, very low DL/user)
     - definite_hub: Very clear hub patterns (few users, very high DL/user)
-    - definite_organic: Very clear human patterns (few users, low DL/user, working hours)
+    - definite_user: Very clear human patterns (few users, low DL/user, working hours)
     - uncertain: Ambiguous cases for analysis
 
     Returns DataFrame with 'ground_truth_label' and 'ground_truth_confidence' columns.
@@ -180,7 +180,7 @@ def create_ground_truth_labels(df: pd.DataFrame) -> pd.DataFrame:
     # Individual researchers: very few users, low downloads, working hours
     mask_individual = (~bot_mask) & (~hub_mask) & \
                       (users <= 3) & (dpu <= 20) & (whr >= 0.4)
-    labels[mask_individual] = 'organic'
+    labels[mask_individual] = 'user'
     confidence[mask_individual] = 0.95
     criteria[mask_individual] = 'individual_user: users<=3, dpu<=20, whr>=0.4'
 
@@ -188,27 +188,27 @@ def create_ground_truth_labels(df: pd.DataFrame) -> pd.DataFrame:
     mask_research = (~bot_mask) & (~hub_mask) & (~mask_individual) & \
                     (users >= 3) & (users <= 30) & (dpu >= 5) & (dpu <= 100) & \
                     (whr >= 0.35)
-    labels[mask_research] = 'organic'
+    labels[mask_research] = 'user'
     confidence[mask_research] = 0.90
     criteria[mask_research] = 'research_group: 3<=users<=30, 5<=dpu<=100, whr>=0.35'
 
     # Casual users: very few users, moderate downloads
     mask_casual = (~bot_mask) & (~hub_mask) & (~mask_individual) & (~mask_research) & \
                   (users <= 5) & (dpu <= 50) & (night <= 0.3)
-    labels[mask_casual] = 'organic'
+    labels[mask_casual] = 'user'
     confidence[mask_casual] = 0.85
     criteria[mask_casual] = 'casual_user: users<=5, dpu<=50, night<=0.3'
 
-    organic_mask = mask_individual | mask_research | mask_casual
-    n_organic = organic_mask.sum()
+    user_mask = mask_individual | mask_research | mask_casual
+    n_users = user_mask.sum()
 
     # Remaining are uncertain
-    n_uncertain = n - n_bots - n_hubs - n_organic
+    n_uncertain = n - n_bots - n_hubs - n_users
 
     logger.info(f"\nGround truth label distribution:")
     logger.info(f"  Definite Bots:    {n_bots:>6,} ({100*n_bots/n:.1f}%)")
     logger.info(f"  Definite Hubs:    {n_hubs:>6,} ({100*n_hubs/n:.1f}%)")
-    logger.info(f"  Definite Organic: {n_organic:>6,} ({100*n_organic/n:.1f}%)")
+    logger.info(f"  Definite Users:   {n_users:>6,} ({100*n_users/n:.1f}%)")
     logger.info(f"  Uncertain:        {n_uncertain:>6,} ({100*n_uncertain/n:.1f}%)")
 
     df['ground_truth_label'] = labels
@@ -234,7 +234,7 @@ def save_ground_truth(df: pd.DataFrame, output_dir: str):
     logger.info(f"Labeled ground truth ({len(labeled_df):,} samples) saved to: {labeled_file}")
 
     # Save per-category samples
-    for label in ['bot', 'hub', 'organic']:
+    for label in ['bot', 'hub', 'user']:
         cat_df = df[df['ground_truth_label'] == label]
         cat_file = os.path.join(output_dir, f'ground_truth_{label}.csv')
         cat_df.to_csv(cat_file, index=False)
@@ -251,7 +251,7 @@ def save_ground_truth(df: pd.DataFrame, output_dir: str):
                 'percentage': float(100 * (df['ground_truth_label'] == label).sum() / len(df)),
                 'total_downloads': int(df.loc[df['ground_truth_label'] == label, 'total_downloads'].sum()),
             }
-            for label in ['bot', 'hub', 'organic', 'uncertain']
+            for label in ['bot', 'hub', 'user', 'uncertain']
         },
         'criteria': {
             'bot': [
@@ -264,7 +264,7 @@ def save_ground_truth(df: pd.DataFrame, output_dir: str):
                 'hub: users<=20, dpu>=500 (conf=0.90)',
                 'research_hub: 10<=users<=200, dpu>=200, total>=100K (conf=0.85)',
             ],
-            'organic': [
+            'user': [
                 'individual_user: users<=3, dpu<=20, whr>=0.4 (conf=0.95)',
                 'research_group: 3<=users<=30, 5<=dpu<=100, whr>=0.35 (conf=0.90)',
                 'casual_user: users<=5, dpu<=50, night<=0.3 (conf=0.85)',

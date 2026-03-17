@@ -195,13 +195,6 @@ FEATURE_COLUMNS = [
     'request_timing_entropy',      # Entropy of request timing (bots=low, humans=moderate)
 ]
 
-# You can add other configurable parameters here as well, e.g.:
-# DEFAULT_CONTAMINATION = 0.15
-# DEFAULT_EPS = 0.5
-# DEFAULT_MIN_SAMPLES = 5
-# DEFAULT_TIME_WINDOW = 'month'
-# DEFAULT_SEQUENCE_LENGTH = 12
-
 
 # =====================================================================
 # Provider Management Functions
@@ -290,100 +283,6 @@ def get_hub_protection_rules() -> dict:
         'single_user': {'max_users': 1, 'min_downloads_per_user': 50},
         'very_few_users': {'max_users': 10, 'min_downloads_per_user': 200},
         'behavioral_exclusion': {'max_working_hours_ratio': 0.1, 'min_night_activity_ratio': 0.7},
-    })
-
-
-def get_bot_detection_rules() -> dict:
-    """Get bot detection rules from config."""
-    return get_classification_config().get('bot_detection', {
-        'ground_truth': {'min_users': 10000, 'max_downloads_per_user': 10},
-        'large_scale': {'min_users': 5000, 'max_downloads_per_user': 100},
-        'many_users_low_dl': {'min_users': 1000, 'max_downloads_per_user': 20},
-        'very_many_users_moderate_dl': {
-            'min_users': 5000,
-            'min_downloads_per_user': 20,
-            'max_downloads_per_user': 100
-        },
-        'moderate_users_suspicious': {
-            'min_users': 500,
-            'max_users': 5000,
-            'min_downloads_per_user': 10,
-            'max_downloads_per_user': 50
-        },
-        'bot_head_override': {'min_users': 100, 'max_downloads_per_user': 100},
-    })
-
-
-def get_download_hub_thresholds() -> dict:
-    """Get download hub thresholds from config."""
-    return get_classification_config().get('download_hub', {
-        'definite': {'min_downloads_per_user': 1000, 'max_users': 200},
-        'standard': {'min_downloads_per_user': 500, 'max_users': 100},
-    })
-
-
-def get_independent_user_thresholds() -> dict:
-    """Get independent user thresholds from config."""
-    return get_classification_config().get('independent_user', {
-        'max_users': 5,
-        'max_downloads_per_user': 3,
-    })
-
-
-def get_bot_score_weights() -> dict:
-    """Get bot score weights from config."""
-    return get_classification_config().get('bot_score_weights', {
-        'many_users_low_dl': 0.7,
-        'very_many_users_moderate_dl': 0.6,
-        'moderate_users_suspicious': 0.4,
-        'high_anomaly': 0.2,
-        'very_high_anomaly': 0.15,
-        'non_working_hours': 0.25,
-        'low_entropy': 0.15,
-        'rule_based_bot': 0.5,
-    })
-
-
-def get_bot_thresholds() -> dict:
-    """Get bot detection thresholds from config."""
-    return get_classification_config().get('bot_thresholds', {
-        'high_anomaly_score': 0.2,
-        'very_high_anomaly_score': 0.25,
-        'low_working_hours_ratio': 0.3,
-        'min_total_downloads': 1000,
-        'low_entropy_quantile': 0.2,
-    })
-
-
-def get_deep_reconciliation_config() -> dict:
-    """Get deep classification reconciliation configuration."""
-    return APP_CONFIG.get('deep_reconciliation', {
-        'override_threshold': 0.7,
-        'strict_override_threshold': 0.8,
-        'prior_sigmoid_steepness': 5.0,
-    })
-
-
-def get_stratified_prefiltering_thresholds() -> dict:
-    """Get stratified pre-filtering thresholds from config."""
-    return get_classification_config().get('stratified_prefiltering', {
-        'obvious_bots': {
-            'min_users': 2000,
-            'many_users_low_dl': {
-                'min_users': 500,
-                'max_downloads_per_user': 100,
-            },
-            'large_scale_low_dl': {
-                'min_users': 100,
-                'max_downloads_per_user': 200,
-            },
-        },
-        'obvious_legitimate': {
-            'max_users': 5,
-            'max_downloads_per_user': 3,
-            'max_total_downloads': 50,
-            'max_anomaly_score': 0.15,
-        },
     })
 
 
@@ -501,17 +400,3 @@ def get_automation_category_rules(use_provider: bool = True) -> dict:
     return get_classification_config().get('automation_category', default_rules)
 
 
-def get_hierarchical_classification_config() -> dict:
-    """
-    Get the complete hierarchical classification configuration.
-
-    Returns a dictionary with all classification levels:
-    - taxonomy: Metadata about the taxonomy
-    - behavior_type: Level 1 rules (organic vs automated)
-    - automation_category: Level 2 rules (bot vs legitimate_automation)
-    """
-    return {
-        'taxonomy': get_taxonomy_info(),
-        'behavior_type': get_behavior_type_rules(),
-        'automation_category': get_automation_category_rules(),
-    }

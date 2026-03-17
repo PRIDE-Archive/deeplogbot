@@ -33,14 +33,17 @@ METHOD_DIRS = {
 
 def get_classification_from_analysis(df: pd.DataFrame) -> pd.Series:
     """Extract a unified 3-class label from analysis DataFrame."""
-    labels = pd.Series('organic', index=df.index)
+    labels = pd.Series(pd.NA, index=df.index, dtype='string')
+
+    # Assign from most general to most specific (later overrides earlier)
+    if 'behavior_type' in df.columns:
+        labels[df['behavior_type'] == 'user'] = 'user'
+        labels[df['behavior_type'] == 'hub'] = 'hub'
+        labels[df['behavior_type'] == 'bot'] = 'bot'
 
     if 'automation_category' in df.columns:
         labels[df['automation_category'] == 'bot'] = 'bot'
         labels[df['automation_category'] == 'legitimate_automation'] = 'hub'
-
-    if 'behavior_type' in df.columns:
-        labels[df['behavior_type'] == 'hub'] = 'hub'
 
     if 'is_bot' in df.columns:
         bot_mask = df['is_bot'].fillna(False).astype(bool)
@@ -49,10 +52,18 @@ def get_classification_from_analysis(df: pd.DataFrame) -> pd.Series:
         hub_mask = df['is_download_hub'].fillna(False).astype(bool)
         labels[hub_mask & (labels != 'bot')] = 'hub'
 
+    # Default remaining unlabeled to 'user' only if they have explicit evidence
+    if 'is_organic' in df.columns:
+        organic_mask = df['is_organic'].fillna(False).astype(bool)
+        labels[organic_mask & labels.isna()] = 'user'
+
+    # Anything still unlabeled defaults to 'user'
+    labels[labels.isna()] = 'user'
+
     return labels
 
 
-def compute_metrics(pred, gt, categories=('bot', 'hub', 'organic')):
+def compute_metrics(pred, gt, categories=('bot', 'hub', 'user')):
     """Compute precision, recall, F1 per category and macro average."""
     metrics = {}
     for cat in categories:
@@ -144,7 +155,7 @@ def main():
         # Align predictions with ground truth by geo_location
         if 'geo_location' in df.columns:
             pred_map = dict(zip(df['geo_location'], pred_labels))
-            matched = np.array([pred_map.get(loc, 'organic') for loc in gt_locations])
+            matched = np.array([pred_map.get(loc, 'user') for loc in gt_locations])
         else:
             min_len = min(len(pred_labels), len(gt_labels))
             matched = pred_labels.values[:min_len]
@@ -156,31 +167,31 @@ def main():
         label_counts = pred_labels.value_counts()
         bot_count = label_counts.get('bot', 0)
         hub_count = label_counts.get('hub', 0)
-        organic_count = label_counts.get('organic', 0)
+        user_count = label_counts.get('user', 0)
 
         bot_dl = int(df.loc[pred_labels == 'bot', 'total_downloads'].sum()) if 'total_downloads' in df.columns else 0
         hub_dl = int(df.loc[pred_labels == 'hub', 'total_downloads'].sum()) if 'total_downloads' in df.columns else 0
-        organic_dl = int(df.loc[pred_labels == 'organic', 'total_downloads'].sum()) if 'total_downloads' in df.columns else 0
-        total_dl = bot_dl + hub_dl + organic_dl
+        user_dl = int(df.loc[pred_labels == 'user', 'total_downloads'].sum()) if 'total_downloads' in df.columns else 0
+        total_dl = bot_dl + hub_dl + user_dl
 
         method_data[method + '_summary'] = {
             'locations': len(df),
             'bot_locations': int(bot_count),
             'hub_locations': int(hub_count),
-            'organic_locations': int(organic_count),
+            'user_locations': int(user_count),
             'bot_downloads': bot_dl,
             'hub_downloads': hub_dl,
-            'organic_downloads': organic_dl,
+            'user_downloads': user_dl,
             'total_downloads': total_dl,
             'bot_dl_pct': bot_dl / total_dl * 100 if total_dl > 0 else 0,
             'hub_dl_pct': hub_dl / total_dl * 100 if total_dl > 0 else 0,
-            'organic_dl_pct': organic_dl / total_dl * 100 if total_dl > 0 else 0,
+            'user_dl_pct': user_dl / total_dl * 100 if total_dl > 0 else 0,
         }
 
         print(f"\n  {method.upper()}: {len(df)} locations")
         print(f"    Bot: {bot_count} locs ({bot_count/len(df)*100:.1f}%), {bot_dl:,} DL ({bot_dl/total_dl*100:.1f}%)" if total_dl else "")
         print(f"    Hub: {hub_count} locs ({hub_count/len(df)*100:.1f}%), {hub_dl:,} DL ({hub_dl/total_dl*100:.1f}%)" if total_dl else "")
-        print(f"    Organic: {organic_count} locs ({organic_count/len(df)*100:.1f}%), {organic_dl:,} DL ({organic_dl/total_dl*100:.1f}%)" if total_dl else "")
+        print(f"    User: {user_count} locs ({user_count/len(df)*100:.1f}%), {user_dl:,} DL ({user_dl/total_dl*100:.1f}%)" if total_dl else "")
 
     # === PERFORMANCE METRICS ===
     print("\n" + "=" * 70)
@@ -194,7 +205,7 @@ def main():
 
         print(f"\n  {method.upper()}:")
         print(f"    Overall accuracy: {metrics['macro_avg']['accuracy']:.1%}")
-        for cat in ['bot', 'hub', 'organic']:
+        for cat in ['bot', 'hub', 'user']:
             m = metrics[cat]
             print(f"    {cat:>8}: P={m['precision']:.3f}  R={m['recall']:.3f}  F1={m['f1']:.3f}")
         print(f"    {'macro':>8}: P={metrics['macro_avg']['precision']:.3f}  R={metrics['macro_avg']['recall']:.3f}  F1={metrics['macro_avg']['f1']:.3f}")
@@ -223,7 +234,7 @@ def main():
 
         # Per-category Jaccard-like agreement
         cat_agr = {}
-        for cat in ['bot', 'hub', 'organic']:
+        for cat in ['bot', 'hub', 'user']:
             m1_cat = l1 == cat
             m2_cat = l2 == cat
             either = np.sum(m1_cat | m2_cat)
@@ -305,12 +316,12 @@ def main():
             'bot_locations_pct': summary.get('bot_locations', 0) / summary.get('locations', 1) * 100,
             'hub_locations': summary.get('hub_locations', 0),
             'hub_locations_pct': summary.get('hub_locations', 0) / summary.get('locations', 1) * 100,
-            'organic_locations': summary.get('organic_locations', 0),
+            'user_locations': summary.get('user_locations', 0),
             'bot_dl_pct': summary.get('bot_dl_pct', 0),
             'hub_dl_pct': summary.get('hub_dl_pct', 0),
-            'organic_dl_pct': summary.get('organic_dl_pct', 0),
+            'user_dl_pct': summary.get('user_dl_pct', 0),
         }
-        for cat in ['bot', 'hub', 'organic']:
+        for cat in ['bot', 'hub', 'user']:
             m = metrics.get(cat, {})
             row[f'{cat}_precision'] = m.get('precision', 0)
             row[f'{cat}_recall'] = m.get('recall', 0)
@@ -336,7 +347,7 @@ def main():
 
     report.append("## Performance Summary")
     report.append("")
-    report.append("| Method | Bot Locs (%) | Hub Locs (%) | Bot DL% | Hub DL% | Organic DL% | Macro F1 | 95% CI |")
+    report.append("| Method | Bot Locs (%) | Hub Locs (%) | Bot DL% | Hub DL% | User DL% | Macro F1 | 95% CI |")
     report.append("|--------|-------------|-------------|---------|---------|-------------|----------|--------|")
 
     for method in methods:
@@ -350,7 +361,7 @@ def main():
             f"{s.get('hub_locations', 0):,} ({s.get('hub_locations', 0)/locs*100:.1f}%) | "
             f"{s.get('bot_dl_pct', 0):.1f}% | "
             f"{s.get('hub_dl_pct', 0):.1f}% | "
-            f"{s.get('organic_dl_pct', 0):.1f}% | "
+            f"{s.get('user_dl_pct', 0):.1f}% | "
             f"{m.get('macro_avg', {}).get('f1', 0):.3f} | "
             f"[{ci.get('lower', 0):.3f}, {ci.get('upper', 0):.3f}] |"
         )
@@ -362,7 +373,7 @@ def main():
         report.append("")
         report.append("| Category | Precision | Recall | F1 | TP | FP | FN |")
         report.append("|----------|-----------|--------|-----|----|----|-----|")
-        for cat in ['bot', 'hub', 'organic']:
+        for cat in ['bot', 'hub', 'user']:
             cm = m.get(cat, {})
             report.append(
                 f"| {cat} | {cm.get('precision', 0):.3f} | {cm.get('recall', 0):.3f} | "
@@ -377,7 +388,7 @@ def main():
     # Agreement
     report.append("\n## Inter-Method Agreement")
     report.append("")
-    report.append("| Pair | Overall | Kappa | Bot Agr | Hub Agr | Organic Agr |")
+    report.append("| Pair | Overall | Kappa | Bot Agr | Hub Agr | User Agr |")
     report.append("|------|---------|-------|---------|---------|-------------|")
     for pair, data in agreement_results.items():
         m1, m2 = pair.split('_vs_')
@@ -385,7 +396,7 @@ def main():
         report.append(
             f"| {m1.upper()} vs {m2.upper()} | "
             f"{data['overall_agreement']:.1%} | {data['cohens_kappa']:.3f} | "
-            f"{ca.get('bot', 0):.1%} | {ca.get('hub', 0):.1%} | {ca.get('organic', 0):.1%} |"
+            f"{ca.get('bot', 0):.1%} | {ca.get('hub', 0):.1%} | {ca.get('user', 0):.1%} |"
         )
 
     # Statistical tests

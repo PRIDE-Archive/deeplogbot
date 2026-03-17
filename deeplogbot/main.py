@@ -45,20 +45,15 @@ def sample_parquet_records(conn, input_parquet: str, sample_size: int, schema: O
 
     # Get DuckDB configuration
     duckdb_config = APP_CONFIG.get('duckdb', {})
-    memory_limit = duckdb_config.get('memory_limit', '16GB')
-    max_temp_directory_size = duckdb_config.get('max_temp_directory_size', '20GiB')
     temp_directory_config = duckdb_config.get('temp_directory', './duckdb-tmp/')
-
-    # Resolve absolute path for temp directory
     temp_directory_abs = os.path.abspath(temp_directory_config)
-
-    # Create temp directory if it doesn't exist
     os.makedirs(temp_directory_abs, exist_ok=True)
 
-    # Set DuckDB memory limits and temp directory
-    conn.execute(f"PRAGMA memory_limit='{memory_limit}'")
-    conn.execute(f"PRAGMA max_temp_directory_size='{max_temp_directory_size}'")
+    # Conservative memory limit — DuckDB spills to disk for large aggregations
+    conn.execute("SET memory_limit='4GB'")
+    conn.execute("SET threads=2")
     conn.execute(f"PRAGMA temp_directory='{temp_directory_abs}'")
+    conn.execute("PRAGMA max_temp_directory_size='30GiB'")
 
     # First, get total count
     count_result = conn.execute(f"SELECT COUNT(*) as total FROM read_parquet('{escaped_path}')").df()
@@ -180,25 +175,19 @@ def run_bot_annotator(
         logger.info(f"Minimum location downloads threshold: {schema.min_location_downloads} (from schema)")
     
     conn = duckdb.connect()
-    # Configure memory limits to prevent OOM issues
-    conn.execute("SET memory_limit='4GB'")
-    conn.execute("SET max_memory='4GB'")
-    conn.execute("SET threads=2")  # Limit parallelism to reduce memory pressure
-    conn.execute("SET threads=1")  # Single thread for stability
-    conn.execute("SET preserve_insertion_order=false")
-    
+
     # Apply DuckDB configuration from config.yaml
     duckdb_config = APP_CONFIG.get('duckdb', {})
-    memory_limit = duckdb_config.get('memory_limit', '16GB')
     temp_directory_config = duckdb_config.get('temp_directory', './duckdb-tmp/')
     temp_directory_abs = os.path.abspath(temp_directory_config)
     os.makedirs(temp_directory_abs, exist_ok=True)
-    
-    conn.execute(f"PRAGMA memory_limit='{memory_limit}'")
-    # Reduce temp directory size to prevent disk space issues
-    conn.execute("PRAGMA max_temp_directory_size='5GiB'")
+
+    # Use conservative memory to allow DuckDB to spill to disk instead of OOM
+    conn.execute("SET memory_limit='4GB'")
+    conn.execute("SET threads=2")
+    conn.execute("SET preserve_insertion_order=false")
     conn.execute(f"PRAGMA temp_directory='{temp_directory_abs}'")
-    # Disable temp file spilling if possible to reduce disk usage
+    conn.execute("PRAGMA max_temp_directory_size='30GiB'")
     conn.execute("SET enable_object_cache=true")
     conn.execute("SET enable_progress_bar=false")
     
@@ -272,59 +261,56 @@ def run_bot_annotator(
                 logger.warning(f"Discriminative feature extraction failed: {e}")
                 logger.info("Continuing without discriminative features...")
         
-        # Step 2: Train Isolation Forest
-        logger.info("\n" + "=" * 70)
-        logger.info("Step 2: Training Isolation Forest")
-        logger.info("=" * 70)
-        # Filter feature columns to only those that actually exist in the dataframe
-        available_features = [f for f in FEATURE_COLUMNS if f != 'time_series_features_present' and f in analysis_df.columns]
-        logger.info(f"Using {len(available_features)} features for Isolation Forest training")
-        if len(available_features) < len(FEATURE_COLUMNS) - 1:
-            missing = [f for f in FEATURE_COLUMNS if f != 'time_series_features_present' and f not in analysis_df.columns]
-            logger.info(f"Note: {len(missing)} features not available: {missing[:5]}{'...' if len(missing) > 5 else ''}")
-        predictions, scores, _, _ = train_isolation_forest(
-            analysis_df, available_features, contamination=contamination
-        )
-        
-        analysis_df['is_anomaly'] = predictions == -1
-        analysis_df['anomaly_score'] = -scores
-        
-        n_anomalies = analysis_df['is_anomaly'].sum()
-        logger.info(f"Detected {n_anomalies:,} anomalous locations")
-        
-        # Add bot interaction and signature features now that anomaly_score is available
+        # Step 2: Anomaly detection & derived features
         if classification_method.lower() == 'deep':
+            # Deep method: compute interaction/signature features without IF
+            logger.info("\n" + "=" * 70)
+            logger.info("Step 2: Computing bot interaction & signature features")
+            logger.info("=" * 70)
             try:
                 from deeplogbot.features.providers.ebi import (
                     add_bot_interaction_features,
                     add_bot_signature_features
                 )
-                # Add interaction features (needs anomaly_score which now exists)
                 analysis_df = add_bot_interaction_features(analysis_df)
                 logger.info("✓ Bot interaction features added successfully")
-                
-                # Add signature features (also needs anomaly_score and other features)
                 analysis_df = add_bot_signature_features(analysis_df)
                 logger.info("✓ Bot signature features added successfully")
             except Exception as e:
                 logger.warning(f"Bot feature addition failed: {e}")
                 logger.info("Continuing without additional features...")
-        
-        # Optional: compute feature importances for interpretability
-        # Note: For 'deep' method, feature importance is computed within classify_locations_deep
-        # So we only compute isolation forest importances for 'rules' method
-        if compute_importances and classification_method.lower() != 'deep':
-            imp_dir = os.path.join(output_dir, 'feature_importances')
-            try:
-                compute_feature_importances(
-                    analysis_df,
-                    [f for f in FEATURE_COLUMNS if f != 'time_series_features_present'],
-                    analysis_df['is_anomaly'],
-                    imp_dir
-                )
-            except Exception as e:
-                logger.warning(f"Feature importance computation failed: {e}")
-                logger.info("Continuing without isolation forest feature importances...")
+        else:
+            # Rules method: train Isolation Forest for anomaly scoring
+            logger.info("\n" + "=" * 70)
+            logger.info("Step 2: Training Isolation Forest")
+            logger.info("=" * 70)
+            available_features = [f for f in FEATURE_COLUMNS if f != 'time_series_features_present' and f in analysis_df.columns]
+            logger.info(f"Using {len(available_features)} features for Isolation Forest training")
+            if len(available_features) < len(FEATURE_COLUMNS) - 1:
+                missing = [f for f in FEATURE_COLUMNS if f != 'time_series_features_present' and f not in analysis_df.columns]
+                logger.info(f"Note: {len(missing)} features not available: {missing[:5]}{'...' if len(missing) > 5 else ''}")
+            predictions, scores, _, _ = train_isolation_forest(
+                analysis_df, available_features, contamination=contamination
+            )
+
+            analysis_df['is_anomaly'] = predictions == -1
+            analysis_df['anomaly_score'] = -scores
+
+            n_anomalies = analysis_df['is_anomaly'].sum()
+            logger.info(f"Detected {n_anomalies:,} anomalous locations")
+
+            if compute_importances:
+                imp_dir = os.path.join(output_dir, 'feature_importances')
+                try:
+                    compute_feature_importances(
+                        analysis_df,
+                        [f for f in FEATURE_COLUMNS if f != 'time_series_features_present'],
+                        analysis_df['is_anomaly'],
+                        imp_dir
+                    )
+                except Exception as e:
+                    logger.warning(f"Feature importance computation failed: {e}")
+                    logger.info("Continuing without isolation forest feature importances...")
         
         # Step 3: Classify locations
         logger.info("\n" + "=" * 70)
@@ -334,7 +320,7 @@ def run_bot_annotator(
         cluster_df = None # Initialize cluster_df
 
         if classification_method.lower() == 'deep':
-            logger.info("Using learned deep classification (Seed -> VAE -> IF -> Temporal -> Fusion)...")
+            logger.info("Using learned deep classification (Seed -> Fusion -> Hub Protection)...")
             # Set up feature importance output directory if requested
             feature_importance_dir = None
             if compute_importances:
@@ -348,13 +334,15 @@ def run_bot_annotator(
                 missing_deep = [f for f in FEATURE_COLUMNS if f != 'time_series_features_present' and f not in analysis_df.columns]
                 logger.info(f"Note: {len(missing_deep)} features not available for deep classification: {missing_deep[:5]}{'...' if len(missing_deep) > 5 else ''}")
 
-            # Learned pipeline: Seed → VAE → Deep IF → Temporal → Fusion
+            # Learned pipeline: Gold-Standard (v9) or Semi-Supervised (v8)
+            training_mode = APP_CONFIG.get('training_mode', 'gold_standard')
             analysis_df, cluster_df = classify_locations_deep(analysis_df,
                                                   available_features_for_deep,
                                                   compute_feature_importance=compute_importances,
                                                   feature_importance_output_dir=feature_importance_dir,
                                                   input_parquet=actual_input_parquet,
-                                                  conn=conn)
+                                                  conn=conn,
+                                                  training_mode=training_mode)
         elif classification_method.lower() == 'rules':
             logger.info("Using rule-based classification with hierarchical taxonomy...")
             # Apply hierarchical classification
@@ -606,20 +594,15 @@ def run_bot_annotator(
             )
         logger.info(f"Normal downloads: {format_number(stats['normal'])} ({stats['normal']/stats['total']*100:.2f}%)")
 
-        # Log hierarchical classification statistics (only for deep method)
+        # Log classification statistics (only for deep method)
         if classification_method.lower() == 'deep' and 'behavior_type' in analysis_df.columns:
-            logger.info("\nHierarchical Classification Statistics (Deep Method):")
+            logger.info("\nClassification Statistics (Deep Method):")
             total = len(analysis_df)
-            organic_count = (analysis_df['behavior_type'] == 'organic').sum()
-            automated_count = (analysis_df['behavior_type'] == 'automated').sum()
-            logger.info(f"  ORGANIC locations: {organic_count:,} ({organic_count/total*100:.1f}%)")
-            logger.info(f"  AUTOMATED locations: {automated_count:,} ({automated_count/total*100:.1f}%)")
-
-            if 'automation_category' in analysis_df.columns and automated_count > 0:
-                bot_count = (analysis_df['automation_category'] == 'bot').sum()
-                legit_count = (analysis_df['automation_category'] == 'legitimate_automation').sum()
-                logger.info(f"    - BOT: {bot_count:,} ({bot_count/automated_count*100:.1f}% of automated)")
-                logger.info(f"    - LEGITIMATE_AUTOMATION: {legit_count:,} ({legit_count/automated_count*100:.1f}% of automated)")
+            for cat in ['user', 'bot', 'hub', 'insufficient_evidence']:
+                count = (analysis_df['behavior_type'] == cat).sum()
+                if count > 0:
+                    dl = analysis_df.loc[analysis_df['behavior_type'] == cat, 'total_downloads'].sum()
+                    logger.info(f"  {cat.upper()}: {count:,} ({count/total*100:.1f}%) — {dl:,.0f} DL")
 
         # Step 6: Save analysis and generate report
         logger.info("\n" + "=" * 70)

@@ -31,7 +31,7 @@ sys.path.insert(0, str(project_root))
 
 INPUT_PARQUET = project_root / 'pride_data' / 'data_downloads_parquet.parquet'
 PROJECTS_JSON = project_root / 'pride_data' / 'all_pride_projects.json'
-OUTPUT_DIR = project_root / 'output' / 'phase6_analysis'
+OUTPUT_DIR = project_root / 'output' / 'full_deep_v11'
 
 
 def get_connection():
@@ -51,22 +51,41 @@ def escaped(path):
 
 
 def setup_clean_filter(conn, labels_df):
-    """Register non-bot locations as a DuckDB temp table for filtering all queries."""
+    """Register user-only locations as a DuckDB temp table for filtering all queries.
+
+    Removes both bot AND hub locations so that analyses reflect genuine
+    individual researcher downloads only.
+    """
     if labels_df is None:
         return False
-    # Support both column formats: 'final_label' (old) and 'is_bot' (new)
-    if 'final_label' in labels_df.columns:
-        non_bot = labels_df[labels_df['final_label'] != 'bot'][['geo_location']].drop_duplicates()
-    elif 'is_bot' in labels_df.columns:
-        non_bot = labels_df[~labels_df['is_bot']][['geo_location']].drop_duplicates()
+    if 'is_bot' in labels_df.columns and 'is_hub' in labels_df.columns:
+        user_only = labels_df[~labels_df['is_bot'] & ~labels_df['is_hub']][['geo_location']].drop_duplicates()
+    elif 'behavior_type' in labels_df.columns:
+        user_only = labels_df[~labels_df['behavior_type'].isin(['bot', 'hub'])][['geo_location']].drop_duplicates()
+    elif 'final_label' in labels_df.columns:
+        user_only = labels_df[~labels_df['final_label'].isin(['bot', 'hub'])][['geo_location']].drop_duplicates()
     else:
-        print("  WARNING: No bot label column found, skipping filter")
+        print("  WARNING: No classification columns found, skipping filter")
         return False
-    conn.register('_clean_locations', non_bot)
+    conn.register('_clean_locations', user_only)
     conn.execute("CREATE TEMP TABLE clean_locations AS SELECT * FROM _clean_locations")
+
+    # Also register hub-only and bot-only tables for category-specific analyses
+    if 'is_hub' in labels_df.columns:
+        hub_only = labels_df[labels_df['is_hub'] == True][['geo_location']].drop_duplicates()
+        conn.register('_hub_locations', hub_only)
+        conn.execute("CREATE TEMP TABLE hub_locations AS SELECT * FROM _hub_locations")
+    if 'is_bot' in labels_df.columns:
+        bot_only = labels_df[labels_df['is_bot'] == True][['geo_location']].drop_duplicates()
+        conn.register('_bot_locations', bot_only)
+        conn.execute("CREATE TEMP TABLE bot_locations AS SELECT * FROM _bot_locations")
+
     n_total = len(labels_df['geo_location'].unique())
-    n_clean = len(non_bot)
-    print(f"\n  Bot filter: keeping {n_clean:,} of {n_total:,} locations ({n_clean/n_total*100:.1f}%)")
+    n_clean = len(user_only)
+    n_bot = labels_df['is_bot'].sum() if 'is_bot' in labels_df.columns else 0
+    n_hub = labels_df['is_hub'].sum() if 'is_hub' in labels_df.columns else 0
+    print(f"\n  Traffic filter: removed {n_bot:,} bot + {n_hub:,} hub locations")
+    print(f"  Keeping {n_clean:,} user-only of {n_total:,} locations ({n_clean/n_total*100:.1f}%)")
     return True
 
 
@@ -74,6 +93,13 @@ def _where_clean(has_filter):
     """Return SQL fragment to filter to non-bot locations."""
     if has_filter:
         return "AND geo_location IN (SELECT geo_location FROM clean_locations)"
+    return ""
+
+
+def _where_no_bots(has_filter):
+    """Return SQL fragment to exclude bot locations (keep users + hubs)."""
+    if has_filter:
+        return "AND geo_location NOT IN (SELECT geo_location FROM bot_locations)"
     return ""
 
 
@@ -176,11 +202,102 @@ def analysis_2_temporal(conn, parquet_path, output_dir, has_filter=False):
     return yearly_df
 
 
+def analysis_2b_temporal_by_category(conn, parquet_path, output_dir, has_filter=False):
+    """Temporal trends broken down by traffic category (user/hub/bot)."""
+    if not has_filter:
+        print("\n--- Analysis 2b: Temporal by Category --- SKIPPED (no labels)")
+        return None
+    print("\n--- Analysis 2b: Temporal by Category ---")
+    p = escaped(parquet_path)
+
+    rows = []
+    for cat, table_filter in [
+        ('user', "AND geo_location IN (SELECT geo_location FROM clean_locations)"),
+        ('hub', "AND geo_location IN (SELECT geo_location FROM hub_locations)"),
+        ('bot', "AND geo_location IN (SELECT geo_location FROM bot_locations)"),
+    ]:
+        query = f"""
+        SELECT year, COUNT(*) as total_downloads
+        FROM read_parquet('{p}')
+        WHERE year >= 2021 AND year <= 2025 {table_filter}
+        GROUP BY year ORDER BY year
+        """
+        try:
+            cat_df = conn.execute(query).df()
+            cat_df['category'] = cat
+            rows.append(cat_df)
+        except Exception as e:
+            print(f"  Warning: {cat} query failed: {e}")
+
+    if rows:
+        result = pd.concat(rows, ignore_index=True)
+        result.to_csv(output_dir / 'temporal_yearly_by_category.csv', index=False)
+        print(f"  Category breakdown: {len(result)} rows")
+        return result
+    return None
+
+
+def analysis_4b_top_datasets_hub(conn, parquet_path, output_dir, has_filter=False):
+    """Top datasets downloaded by hub locations only."""
+    if not has_filter:
+        print("\n--- Analysis 4b: Hub Top Datasets --- SKIPPED (no labels)")
+        return None
+    print("\n--- Analysis 4b: Hub Top Datasets ---")
+    p = escaped(parquet_path)
+
+    query = f"""
+    SELECT
+        accession,
+        COUNT(*) as total_downloads,
+        COUNT(DISTINCT geo_location) as unique_locations,
+        COUNT(DISTINCT country) as unique_countries
+    FROM read_parquet('{p}')
+    WHERE accession IS NOT NULL
+    AND geo_location IN (SELECT geo_location FROM hub_locations)
+    GROUP BY accession
+    ORDER BY total_downloads DESC
+    LIMIT 100
+    """
+    top_df = conn.execute(query).df()
+    top_df.to_csv(output_dir / 'top_datasets_hub.csv', index=False)
+    print(f"  Top 5 hub datasets:")
+    for _, row in top_df.head(5).iterrows():
+        print(f"    {row['accession']}: {row['total_downloads']:,} DL, {row['unique_countries']} countries")
+    return top_df
+
+
+def analysis_7b_country_bubble_hub(conn, parquet_path, output_dir, has_filter=False):
+    """Country-level hub-only data for bubble chart."""
+    if not has_filter:
+        print("\n--- Analysis 7b: Hub Country Bubble --- SKIPPED (no labels)")
+        return None
+    print("\n--- Analysis 7b: Hub Country Bubble ---")
+    p = escaped(parquet_path)
+
+    query = f"""
+    SELECT
+        country,
+        COUNT(*) as total_downloads,
+        COUNT(DISTINCT user) as unique_users,
+        CAST(COUNT(*) AS DOUBLE) / NULLIF(COUNT(DISTINCT user), 0) as dl_per_user
+    FROM read_parquet('{p}')
+    WHERE country IS NOT NULL
+    AND geo_location IN (SELECT geo_location FROM hub_locations)
+    GROUP BY country
+    HAVING COUNT(*) >= 100
+    ORDER BY total_downloads DESC
+    """
+    hub_df = conn.execute(query).df()
+    hub_df.to_csv(output_dir / 'country_bubble_hub_data.csv', index=False)
+    print(f"  Hub countries with >= 100 downloads: {len(hub_df)}")
+    return hub_df
+
+
 def analysis_3_protocols(conn, parquet_path, output_dir, has_filter=False):
-    """Protocol analysis: HTTP vs FTP vs Aspera vs Globus."""
+    """Protocol analysis: HTTP vs FTP vs Aspera (users + hubs, bots excluded)."""
     print("\n--- Analysis 3: Protocol Usage ---")
     p = escaped(parquet_path)
-    filt = _where_clean(has_filter)
+    filt = _where_no_bots(has_filter)
 
     cols_query = f"SELECT column_name FROM (DESCRIBE SELECT * FROM read_parquet('{p}') LIMIT 0)"
     cols = conn.execute(cols_query).df()['column_name'].tolist()
@@ -206,6 +323,22 @@ def analysis_3_protocols(conn, parquet_path, output_dir, has_filter=False):
         proto_df = conn.execute(proto_query).df()
         proto_df.to_csv(output_dir / 'protocol_usage.csv', index=False)
         print(f"  Protocol data:\n{proto_df.head(20).to_string(index=False)}")
+
+        # Monthly breakdown for 2025 (used by figure Panel B)
+        monthly_query = f"""
+        SELECT
+            method as protocol,
+            month,
+            COUNT(*) as downloads
+        FROM read_parquet('{p}')
+        WHERE year = 2025 {filt}
+        GROUP BY method, month
+        ORDER BY month, downloads DESC
+        """
+        monthly_df = conn.execute(monthly_query).df()
+        monthly_df.to_csv(output_dir / 'protocol_monthly_2025.csv', index=False)
+        print(f"  Monthly 2025 data points: {len(monthly_df)}")
+
         return proto_df
     except Exception as e:
         print(f"  Protocol analysis failed: {e}")
@@ -376,6 +509,111 @@ def analysis_6_hourly_patterns(conn, parquet_path, output_dir, has_filter=False)
         return None
 
 
+def analysis_7_country_bubble(conn, parquet_path, output_dir, has_filter=False):
+    """Country-level bubble chart data: unique users, downloads, downloads/user."""
+    print("\n--- Analysis 7: Country Bubble Data ---")
+    p = escaped(parquet_path)
+    filt = _where_clean(has_filter)
+
+    query = f"""
+    SELECT
+        country,
+        COUNT(*) as total_downloads,
+        COUNT(DISTINCT "user") as unique_users,
+        CAST(COUNT(*) AS DOUBLE) / NULLIF(COUNT(DISTINCT "user"), 0) as dl_per_user
+    FROM read_parquet('{p}')
+    WHERE country IS NOT NULL AND country != '' AND country NOT LIKE '%{{%' {filt}
+    GROUP BY country
+    HAVING COUNT(*) >= 100
+    ORDER BY total_downloads DESC
+    """
+    try:
+        bubble_df = conn.execute(query).df()
+        bubble_df.to_csv(output_dir / 'country_bubble_data.csv', index=False)
+        print(f"  Countries with >= 100 downloads: {len(bubble_df)}")
+        return bubble_df
+    except Exception as e:
+        print(f"  Country bubble analysis failed: {e}")
+        return None
+
+
+def analysis_8_filetype_by_region(conn, parquet_path, output_dir, has_filter=False):
+    """File type download patterns by region."""
+    print("\n--- Analysis 8: File Type by Region ---")
+    p = escaped(parquet_path)
+    filt = _where_clean(has_filter)
+
+    # Map file extensions to categories
+    query = f"""
+    SELECT
+        country,
+        filename,
+        COUNT(*) as downloads
+    FROM read_parquet('{p}')
+    WHERE country IS NOT NULL AND country != '' AND country NOT LIKE '%{{%'
+      AND filename IS NOT NULL {filt}
+    GROUP BY country, filename
+    """
+    try:
+        df = conn.execute(query).df()
+    except Exception as e:
+        print(f"  File type query failed: {e}")
+        return None
+
+    # Classify file types by extension
+    def classify_filetype(filename):
+        if not isinstance(filename, str):
+            return 'other'
+        fn = filename.lower()
+        if any(fn.endswith(ext) for ext in ['.raw', '.d', '.wiff', '.baf', '.tdf']):
+            return 'raw'
+        if any(fn.endswith(ext) for ext in ['.mgf', '.mzml', '.mzxml', '.ms2', '.mzml.gz']):
+            return 'processed_spectra'
+        if any(fn.endswith(ext) for ext in ['.mzid', '.mzid.gz', '.pep.xml', '.pepxml',
+                                             '.prot.xml', '.protxml', '.pride.mztab.gz',
+                                             '.mztab', '.mztab.gz']):
+            return 'result'
+        if any(fn.endswith(ext) for ext in ['.csv', '.tsv', '.txt', '.xlsx', '.xls']):
+            return 'tabular'
+        if any(fn.endswith(ext) for ext in ['.fasta', '.fasta.gz', '.fa', '.fa.gz']):
+            return 'database'
+        if any(fn.endswith(ext) for ext in ['.xml', '.sdrf.tsv', '.sdrf']):
+            return 'metadata'
+        if any(fn.endswith(ext) for ext in ['.zip', '.tar', '.gz', '.7z', '.rar']):
+            return 'compressed'
+        return 'other'
+
+    df['file_category'] = df['filename'].apply(classify_filetype)
+
+    # LMIC countries (Wellcome Trust definition)
+    lmic = {'Bangladesh', 'Brazil', 'China', 'Colombia', 'Ecuador', 'Egypt', 'India',
+            'Indonesia', 'Iran', 'Iraq', 'Kenya', 'Malaysia', 'Mexico', 'Morocco',
+            'Nigeria', 'Pakistan', 'Peru', 'Philippines', 'South Africa', 'Thailand',
+            'Turkey', 'Ukraine', 'Vietnam'}
+
+    def get_region(c):
+        if c in lmic:
+            return 'LMIC'
+        if c in {'China', 'Japan', 'South Korea', 'Taiwan', 'Hong Kong', 'Singapore'}:
+            return 'East Asia'
+        if c in {'United States', 'Canada'}:
+            return 'North America'
+        if c in {'United Kingdom', 'Germany', 'France', 'Spain', 'Italy', 'Netherlands',
+                 'Switzerland', 'Sweden', 'Denmark', 'Belgium', 'Finland', 'Norway',
+                 'Austria', 'Poland', 'Ireland', 'Portugal', 'Greece', 'Hungary',
+                 'Czech Republic', 'Czechia', 'Romania'}:
+            return 'Europe'
+        return 'Other'
+
+    df['region'] = df['country'].apply(get_region)
+
+    # Aggregate: region x file_type
+    result = df.groupby(['region', 'file_category'])['downloads'].sum().reset_index()
+    result.to_csv(output_dir / 'filetype_by_region.csv', index=False)
+    print(f"  File type by region data points: {len(result)}")
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description='Run comprehensive PRIDE usage analysis')
     parser.add_argument('--with-labels', type=str, default=None,
@@ -399,13 +637,18 @@ def main():
         print(f"\nLoaded {len(labels_df):,} classification labels")
         has_filter = setup_clean_filter(conn, labels_df)
 
-    # Run all analyses (filtered to non-bot locations when labels provided)
+    # Run all analyses (filtered to user-only locations when labels provided)
     country_df = analysis_1_geographic(conn, INPUT_PARQUET, OUTPUT_DIR, has_filter)
     yearly_df = analysis_2_temporal(conn, INPUT_PARQUET, OUTPUT_DIR, has_filter)
+    analysis_2b_temporal_by_category(conn, INPUT_PARQUET, OUTPUT_DIR, has_filter)
     proto_df = analysis_3_protocols(conn, INPUT_PARQUET, OUTPUT_DIR, has_filter)
     top_df = analysis_4_top_datasets(conn, INPUT_PARQUET, OUTPUT_DIR, has_filter)
+    analysis_4b_top_datasets_hub(conn, INPUT_PARQUET, OUTPUT_DIR, has_filter)
     concentration = analysis_5_concentration(conn, INPUT_PARQUET, OUTPUT_DIR, has_filter)
     hourly_df = analysis_6_hourly_patterns(conn, INPUT_PARQUET, OUTPUT_DIR, has_filter)
+    bubble_df = analysis_7_country_bubble(conn, INPUT_PARQUET, OUTPUT_DIR, has_filter)
+    analysis_7b_country_bubble_hub(conn, INPUT_PARQUET, OUTPUT_DIR, has_filter)
+    filetype_df = analysis_8_filetype_by_region(conn, INPUT_PARQUET, OUTPUT_DIR, has_filter)
 
     conn.close()
 
