@@ -158,7 +158,7 @@ Reports generated: `bot_detection_report.txt`, `location_analysis.csv`.
 
 If you use DeepLogBot in your research, please cite:
 
-> Hewapathirana S, Bai J, Bandla C, et al. *Quantifying dataset reuse in proteomics: semi-supervised and LLM-refined analysis of PRIDE download statistics.* (2025)
+> Hewapathirana S, Bai J, Bandla C, et al. *Quantifying data reuse in proteomics using PRIDE download statistics and a semi-supervised LLM-based framework.* (2025)
 
 ## License
 
