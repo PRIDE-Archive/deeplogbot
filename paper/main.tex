@@ -48,7 +48,7 @@
 Understanding how scientific datasets are accessed and reused is essential for resource planning and impact assessment. Here we present the PRIDE Archive download tracking infrastructure and a comprehensive analysis of 159.3 million download records from the PRIDE proteomics database (2021--2025), spanning 35,528 datasets accessed from 235 countries. The infrastructure includes \texttt{nf-downloadstats}, a scalable Nextflow pipeline for processing download logs, and DeepLogBot, a machine-learning framework that classifies traffic into bots, institutional download hubs, and independent user downloads. DeepLogBot combines heuristic seed selection with multi-LLM annotation (Claude and Qwen3) to produce gold-standard training labels, achieving 92.2\% bot classification accuracy on a held-out test set. After separating bot traffic, analysis reveals downloads from 214 countries, 249 institutional download hubs, and a concentrated reuse distribution, with the top five countries (United States, United Kingdom, Germany, China, and Canada) accounting for over 54\% of independent user downloads. These findings provide actionable insights for repository infrastructure planning and highlight the importance of distinguishing automated from individual access in scientific data resources.
 
 \begin{sloppypar}
-\noindent\textbf{Availability:} The \texttt{nf-downloadstats} pipeline is available at \url{https://github.com/PRIDE-Archive/nf-downloadstats} and DeepLogBot at \url{https://github.com/ypriverol/deeplogbot}, both under the Apache 2.0 license.
+\noindent\textbf{Availability:} The \texttt{nf-downloadstats} pipeline is available at \url{https://github.com/PRIDE-Archive/nf-downloadstats} and DeepLogBot at \url{https://github.com/pride-archive/deeplogbot}, both under the Apache 2.0 license.
 \end{sloppypar}
 
 \noindent\textbf{Keywords:} download hubs, data reuse, download analytics, LLM-refined classification, PRIDE, proteomics
@@ -207,7 +207,7 @@ In summary, we present the PRIDE database download tracking infrastructure, comp
 \section*{Data and Code Availability}
 
 \begin{sloppypar}
-The \texttt{nf-downloadstats} pipeline is available at \url{https://github.com/PRIDE-Archive/nf-downloadstats} and the DeepLogBot software at \url{https://github.com/ypriverol/deeplogbot}, both under the Apache 2.0 license. Download log data is available upon request from the PRIDE team.
+The \texttt{nf-downloadstats} pipeline is available at \url{https://github.com/PRIDE-Archive/nf-downloadstats} and the DeepLogBot software at \url{https://github.com/pride-archive/deeplogbot}, both under the Apache 2.0 license. Download log data is available upon request from the PRIDE team.
 \end{sloppypar}
 
 \section*{Author contributions}
