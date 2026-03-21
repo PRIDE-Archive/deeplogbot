@@ -24,20 +24,90 @@ from matplotlib.patches import FancyBboxPatch
 from pathlib import Path
 import duckdb
 
-# Style settings for publication
+# ── Publication-quality style ──────────────────────────────────────────
 plt.rcParams.update({
-    'font.size': 12,
+    # Typography
     'font.family': 'sans-serif',
-    'axes.labelsize': 13,
+    'font.sans-serif': ['Helvetica Neue', 'Helvetica', 'Arial', 'DejaVu Sans'],
+    'font.size': 11,
+    'axes.labelsize': 12,
     'axes.titlesize': 13,
-    'xtick.labelsize': 11,
-    'ytick.labelsize': 11,
-    'legend.fontsize': 10,
-    'figure.dpi': 600,
+    'axes.titleweight': 'bold',
+    'xtick.labelsize': 10,
+    'ytick.labelsize': 10,
+    'legend.fontsize': 9,
+    'legend.title_fontsize': 10,
+    # Axes
+    'axes.spines.top': False,
+    'axes.spines.right': False,
+    'axes.linewidth': 0.8,
+    'axes.edgecolor': '#333333',
+    'axes.labelcolor': '#333333',
+    'xtick.color': '#555555',
+    'ytick.color': '#555555',
+    'xtick.major.width': 0.6,
+    'ytick.major.width': 0.6,
+    'xtick.major.size': 4,
+    'ytick.major.size': 4,
+    # Grid
+    'axes.grid': False,
+    'grid.alpha': 0.15,
+    'grid.linewidth': 0.5,
+    'grid.color': '#cccccc',
+    # Figure
+    'figure.dpi': 300,
     'savefig.dpi': 600,
     'savefig.bbox': 'tight',
-    'savefig.pad_inches': 0.1,
+    'savefig.pad_inches': 0.15,
+    'figure.facecolor': 'white',
+    'axes.facecolor': 'white',
+    # Legend
+    'legend.frameon': False,
+    'legend.edgecolor': '#cccccc',
 })
+
+# ── Refined color palette ─────────────────────────────────────────────
+# Softer, more harmonious palette for publication
+PALETTE = {
+    'bot':     '#D63031',   # muted red
+    'hub':     '#2D7DD2',   # steel blue
+    'user':    '#27AE60',   # emerald green
+    'organic': '#27AE60',   # alias for user
+    'accent1': '#F39C12',   # warm amber
+    'accent2': '#8E44AD',   # deep purple
+    'accent3': '#E67E22',   # orange
+    'gray':    '#7F8C8D',   # neutral gray
+    'light_gray': '#BDC3C7',
+}
+
+# Protocol colors
+PROTOCOL_COLORS = {
+    'FTP': '#E67E22',
+    'HTTP': '#2D7DD2',
+    'Aspera': '#27AE60',
+}
+
+# Region colors (Set2-inspired, colorblind-friendly)
+REGION_COLORS = {
+    'East Asia':      '#66C2A5',
+    'North America':  '#8DA0CB',
+    'Europe':         '#A6D854',
+    'LMIC':           '#E5C494',
+}
+
+def _style_panel_label(ax, label, loc='left'):
+    """Add a bold panel label like (A), (B) etc."""
+    ax.set_title(label, fontsize=12, fontweight='bold', loc=loc, pad=10)
+
+def _lighten_color(color, amount=0.3):
+    """Lighten a hex color."""
+    import colorsys
+    c = color.lstrip('#')
+    r, g, b = int(c[:2], 16)/255, int(c[2:4], 16)/255, int(c[4:], 16)/255
+    h, l, s = colorsys.rgb_to_hls(r, g, b)
+    l = min(1, l + amount)
+    r2, g2, b2 = colorsys.hls_to_rgb(h, l, s)
+    return f'#{int(r2*255):02x}{int(g2*255):02x}{int(b2*255):02x}'
 
 project_root = Path(__file__).parent.parent
 ANALYSIS_DIR = project_root / 'output' / 'full_deep_v11'
@@ -64,13 +134,14 @@ LMIC_COUNTRIES = [
     'Iran', 'Nigeria',
 ]
 
-# Color palette
+# Color palette (uses refined PALETTE defined above)
 COLORS = {
-    'bot': '#E74C3C',       # red
-    'hub': '#3498DB',       # blue
-    'organic': '#2ECC71',   # green
-    'rules': '#E67E22',     # orange
-    'deep': '#9B59B6',      # purple
+    'bot': PALETTE['bot'],
+    'hub': PALETTE['hub'],
+    'organic': PALETTE['user'],
+    'user': PALETTE['user'],
+    'rules': PALETTE['accent3'],
+    'deep': PALETTE['accent2'],
 }
 
 
@@ -177,7 +248,7 @@ def figure_bot_detection_overview(output_dir):
     draw_arrow(ax, 7.1, 5.9, 4.75, 5.4)
 
     # Row 3: Seed Selection
-    draw_box(ax, 2.0, 4.3, 5.5, 0.9, 'Seed Selection\nOrganic (3-tier) \u00b7 Bot (6-signal) \u00b7 Hub (structural)',
+    draw_box(ax, 2.0, 4.3, 5.5, 0.9, 'Seed Selection\nUser (3-tier) \u00b7 Bot (6-signal) \u00b7 Hub (structural)',
              color='#F5EEF8', edge='#8E44AD', fontsize=9)
 
     # Arrow down to fusion
@@ -201,9 +272,9 @@ def figure_bot_detection_overview(output_dir):
 
     # ---- Panel B: Classification distribution (download share bar chart) ----
     ax2 = fig.add_subplot(gs[0, 1])
-    dl_cats = ['Organic', 'Hub', 'Bot']
+    dl_cats = ['User', 'Hub', 'Bot']
     dl_vals = [stats['organic_dl_pct'], stats['hub_dl_pct'], stats['bot_dl_pct']]
-    cat_colors = [COLORS['organic'], COLORS['hub'], COLORS['bot']]
+    cat_colors = [COLORS['user'], COLORS['hub'], COLORS['bot']]
 
     bars = ax2.bar(dl_cats, dl_vals, color=cat_colors, edgecolor='black', linewidth=0.5, width=0.65)
     ax2.set_ylabel('Percentage of Total Downloads', fontsize=10)
@@ -267,9 +338,9 @@ def figure_1_pipeline_overview(output_dir):
     import matplotlib.patches as mpatches
     from matplotlib.patches import FancyBboxPatch
 
-    fig, ax = plt.subplots(figsize=(14, 8.5))
+    fig, ax = plt.subplots(figsize=(14, 9.5))
     ax.set_xlim(0, 14)
-    ax.set_ylim(0, 10.5)
+    ax.set_ylim(-0.2, 10.8)
     ax.axis('off')
 
     bh = 0.55   # box height
@@ -337,7 +408,7 @@ def figure_1_pipeline_overview(output_dir):
     sx = mid - sw/2
     draw_box(sx, r2y, sw, bh,
              'Phase 1: Seed Selection\n'
-             'Organic (3-tier) \u00b7 Bot (6-signal) \u00b7 Hub (structural + institutional)',
+             'User (3-tier) \u00b7 Bot (6-signal) \u00b7 Hub (structural + institutional)',
              color='#E8DAEF', edge='#8E44AD', fontsize=8.5)
 
     draw_arrow(mid, r2y, mid, r2y - 0.3)
@@ -505,16 +576,14 @@ def figure_2_temporal(output_dir):
     else:
         df = None
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5))
 
-    # Panel A: Stacked bar — user / hub / bot downloads per year
+    # Panel A: Stacked bar — user / hub downloads per year
     if has_categories:
-        # Column may be 'behavior_type' or 'category' depending on analysis version
         cat_col = 'behavior_type' if 'behavior_type' in cat_df.columns else 'category'
         pivot = cat_df.pivot_table(values='total_downloads', index='year',
                                     columns=cat_col, fill_value=0)
         years = pivot.index.astype(int)
-        # Ensure columns exist
         for col in ['user', 'hub', 'bot']:
             if col not in pivot.columns:
                 pivot[col] = 0
@@ -522,32 +591,30 @@ def figure_2_temporal(output_dir):
         user_vals = pivot['user'].values / 1e6
         hub_vals = pivot['hub'].values / 1e6
 
-        ax1.bar(years, user_vals, color=COLORS['organic'], edgecolor='white',
-                width=0.7, label='Users')
-        ax1.bar(years, hub_vals, bottom=user_vals, color=COLORS['hub'],
-                edgecolor='white', width=0.7, label='Hubs')
+        ax1.bar(years, user_vals, color=PALETTE['user'], edgecolor='white',
+                width=0.65, label='Users', zorder=3)
+        ax1.bar(years, hub_vals, bottom=user_vals, color=PALETTE['hub'],
+                edgecolor='white', width=0.65, label='Hubs', zorder=3)
 
         totals = user_vals + hub_vals
         max_dl = totals.max()
         ax1.set_ylim(0, max_dl * 1.35)
         for i, (yr, total) in enumerate(zip(years, totals)):
             ax1.text(yr, total + max_dl * 0.02, f"{total:.1f}M",
-                     ha='center', fontsize=10)
-            # Add YoY user growth % annotation
+                     ha='center', fontsize=10, fontweight='bold', color='#333333')
             if i > 0 and user_vals[i - 1] > 0:
                 growth_pct = (user_vals[i] - user_vals[i - 1]) / user_vals[i - 1] * 100
-                color = '#27AE60' if growth_pct > 0 else '#E74C3C'
-                arrow = '\u2191' if growth_pct > 0 else '\u2193'
+                color = PALETTE['user'] if growth_pct > 0 else PALETTE['bot']
+                arrow = '+' if growth_pct > 0 else ''
                 ax1.text(yr, total + max_dl * 0.09,
-                         f"user {arrow}{growth_pct:+.0f}%",
+                         f"user {arrow}{growth_pct:.0f}%",
                          ha='center', fontsize=8, color=color, fontweight='bold')
 
-        ax1.legend(frameon=False, loc='upper left')
+        ax1.legend(loc='upper left')
     else:
-        # Fallback: simple bar
         years = df['year'].astype(int)
-        ax1.bar(years, df['total_downloads'] / 1e6, color='#3498DB',
-                edgecolor='white', width=0.7)
+        ax1.bar(years, df['total_downloads'] / 1e6, color=PALETTE['hub'],
+                edgecolor='white', width=0.65, zorder=3)
         max_dl = df['total_downloads'].max() / 1e6
         ax1.set_ylim(0, max_dl * 1.25)
         for _, row in df.iterrows():
@@ -556,9 +623,8 @@ def figure_2_temporal(output_dir):
 
     ax1.set_xlabel('Year')
     ax1.set_ylabel('Total Downloads (millions)')
-    ax1.set_title('A) Annual Download Volume')
-    ax1.spines['top'].set_visible(False)
-    ax1.spines['right'].set_visible(False)
+    _style_panel_label(ax1, '(A) Annual Download Volume')
+    ax1.grid(axis='y', alpha=0.15, zorder=0)
     if has_categories:
         ax1.set_xticks(years)
     else:
@@ -569,18 +635,25 @@ def figure_2_temporal(output_dir):
     if df is not None:
         years_b = df['year'].astype(int)
         ax2b = ax2.twinx()
-        l1 = ax2.plot(years_b, df['unique_datasets'] / 1e3, 'o-', color='#E67E22', label='Unique datasets (k)')
-        l2 = ax2b.plot(years_b, df['unique_locations'] / 1e3, 's--', color='#9B59B6', label='Unique locations (k)')
+        l1 = ax2.plot(years_b, df['unique_datasets'] / 1e3, 'o-',
+                      color=PALETTE['accent3'], label='Unique datasets (k)',
+                      linewidth=2, markersize=6, zorder=3)
+        l2 = ax2b.plot(years_b, df['unique_locations'] / 1e3, 's--',
+                       color=PALETTE['accent2'], label='Unique locations (k)',
+                       linewidth=2, markersize=6, zorder=3)
         ax2.set_xlabel('Year')
-        ax2.set_ylabel('Unique Datasets (thousands)', color='#E67E22')
-        ax2b.set_ylabel('Unique Locations (thousands)', color='#9B59B6')
-        ax2.set_title('B) Dataset and Location Growth')
-        ax2.spines['top'].set_visible(False)
+        ax2.set_ylabel('Unique Datasets (thousands)', color=PALETTE['accent3'])
+        ax2b.set_ylabel('Unique Locations (thousands)', color=PALETTE['accent2'])
+        ax2b.spines['right'].set_visible(True)
+        ax2b.spines['right'].set_color(PALETTE['accent2'])
+        ax2b.tick_params(axis='y', colors=PALETTE['accent2'])
+        _style_panel_label(ax2, '(B) Dataset and Location Growth')
         ax2.set_xticks(years_b)
         ax2.set_xticklabels(years_b)
+        ax2.grid(axis='y', alpha=0.15, zorder=0)
         lines = l1 + l2
         labels = [l.get_label() for l in lines]
-        ax2.legend(lines, labels, loc='upper left', frameon=False)
+        ax2.legend(lines, labels, loc='upper left')
 
     plt.tight_layout()
     plt.savefig(output_dir / 'figure4_temporal_trends.pdf', format='pdf')
@@ -695,9 +768,7 @@ def figure_4_protocols(output_dir):
     protocol_order = [p for p in ['FTP', 'HTTP', 'Aspera'] if p in pivot.columns]
     pivot = pivot[protocol_order]
 
-    protocol_colors = {'HTTP': '#3498DB', 'FTP': '#E67E22', 'Aspera': '#2ECC71'}
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5))
 
     # Panel A: Absolute download counts (stacked bar)
     years = pivot.index.astype(str)
@@ -705,15 +776,15 @@ def figure_4_protocols(output_dir):
     for proto in protocol_order:
         values = pivot[proto].values
         ax1.bar(years, values / 1e6, bottom=bottom / 1e6,
-                color=protocol_colors[proto], label=proto, edgecolor='white', linewidth=0.5)
+                color=PROTOCOL_COLORS.get(proto, '#999'), label=proto,
+                edgecolor='white', linewidth=0.5, zorder=3)
         bottom += values
 
     ax1.set_xlabel('Year')
     ax1.set_ylabel('Downloads (millions)')
-    ax1.set_title('(A) Download Volume by Protocol')
-    ax1.legend(title='Protocol', frameon=False)
-    ax1.spines['top'].set_visible(False)
-    ax1.spines['right'].set_visible(False)
+    _style_panel_label(ax1, '(A) Download Volume by Protocol')
+    ax1.legend(title='Protocol')
+    ax1.grid(axis='y', alpha=0.15, zorder=0)
 
     # Panel B: Monthly protocol breakdown for 2025
     monthly_path = ANALYSIS_DIR / 'protocol_monthly_2025.csv'
@@ -733,17 +804,17 @@ def figure_4_protocols(output_dir):
         for proto in proto_order_m:
             values = pivot_m[proto].values / 1e6
             ax2.bar(x_pos, values, bottom=bottom_m,
-                    color=protocol_colors[proto], label=proto, edgecolor='white', linewidth=0.5)
+                    color=PROTOCOL_COLORS.get(proto, '#999'), label=proto,
+                    edgecolor='white', linewidth=0.5, zorder=3)
             bottom_m += values
 
         ax2.set_xticks(x_pos)
         ax2.set_xticklabels([month_labels[m - 1] for m in months], rotation=45, ha='right')
         ax2.set_xlabel('Month (2025)')
         ax2.set_ylabel('Downloads (millions)')
-        ax2.set_title('(B) FTP & Aspera Monthly Usage in 2025')
-        ax2.legend(title='Protocol', frameon=False)
-        ax2.spines['top'].set_visible(False)
-        ax2.spines['right'].set_visible(False)
+        _style_panel_label(ax2, '(B) FTP & Aspera Monthly Usage in 2025')
+        ax2.legend(title='Protocol')
+        ax2.grid(axis='y', alpha=0.15, zorder=0)
 
     plt.tight_layout()
     plt.savefig(output_dir / 'figure5_protocol_usage.pdf', format='pdf', bbox_inches='tight')
@@ -804,35 +875,36 @@ def figure_5_concentration(output_dir):
     # Layout: top row = A (rank-freq) + B (top 20 bar), bottom = C (heatmap)
     fig = plt.figure(figsize=(16, 14))
     gs = gridspec.GridSpec(2, 2, width_ratios=[1, 1], height_ratios=[0.7, 1],
-                           wspace=0.35, hspace=0.3)
+                           wspace=0.35, hspace=0.35)
     ax1 = fig.add_subplot(gs[0, 0])
     ax2 = fig.add_subplot(gs[0, 1])
     ax3 = fig.add_subplot(gs[1, :])
 
     # ---- Panel A: Rank-frequency (log-log) ----
     ranks = np.arange(1, len(downloads) + 1)
-    ax1.scatter(ranks, downloads, s=8, alpha=0.5, color='steelblue', edgecolors='none')
+    ax1.scatter(ranks, downloads, s=10, alpha=0.5, color=PALETTE['hub'],
+                edgecolors='none', zorder=3)
     ax1.set_xscale('log')
     ax1.set_yscale('log')
     ax1.set_xlabel('Dataset Rank')
     ax1.set_ylabel('Total Downloads')
-    ax1.set_title('(A) Rank-Frequency Distribution', fontsize=11, fontweight='bold', loc='left')
-    ax1.spines['top'].set_visible(False)
-    ax1.spines['right'].set_visible(False)
+    _style_panel_label(ax1, '(A) Rank-Frequency Distribution')
+    ax1.grid(True, alpha=0.1, which='both', zorder=0)
 
     top1_idx = int(len(downloads) * 0.01)
     if top1_idx > 0:
-        ax1.axvline(x=top1_idx, color='red', linestyle='--', alpha=0.7, linewidth=1)
+        ax1.axvline(x=top1_idx, color=PALETTE['bot'], linestyle='--', alpha=0.6, linewidth=1.2)
         ax1.text(top1_idx * 1.3, downloads[0] * 0.5, 'Top 1%',
-                 color='red', fontsize=11, fontweight='bold')
+                 color=PALETTE['bot'], fontsize=11, fontweight='bold')
 
     textstr = (f'Gini = {stats["gini_coefficient"]:.2f}\n'
                f'Top 1%: {stats["top_1pct_downloads_pct"]:.1f}% of DL\n'
                f'Top 10%: {stats["top_10pct_downloads_pct"]:.1f}% of DL\n'
                f'Median: {stats["median_downloads"]:,} DL')
-    ax1.text(0.95, 0.95, textstr, transform=ax1.transAxes, fontsize=11,
+    ax1.text(0.95, 0.95, textstr, transform=ax1.transAxes, fontsize=10,
              verticalalignment='top', horizontalalignment='right',
-             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+             bbox=dict(boxstyle='round,pad=0.5', facecolor='#F8F9FA',
+                       edgecolor='#DEE2E6', alpha=0.95))
 
     # ---- Panel B: Top 20 datasets horizontal bar ----
     top20 = top_all.nlargest(20, 'total_downloads')
@@ -841,15 +913,14 @@ def figure_5_concentration(output_dir):
     dl_vals = top20['total_downloads'].values
     n_countries = top20['unique_countries'].values if 'unique_countries' in top20.columns else [0] * n_rows
 
-    colors = plt.cm.viridis(np.linspace(0.3, 0.9, n_rows))
-    bars = ax2.barh(range(n_rows), dl_vals, color=colors, edgecolor='#333333', linewidth=0.3, alpha=0.85)
+    # Color gradient from light to dark based on rank
+    colors = [plt.cm.YlGnBu(0.25 + 0.55 * (1 - i/n_rows)) for i in range(n_rows)]
+    bars = ax2.barh(range(n_rows), dl_vals, color=colors, edgecolor='white', linewidth=0.5)
     ax2.set_yticks(range(n_rows))
     ax2.set_yticklabels(accessions, fontsize=9, fontfamily='monospace')
     ax2.invert_yaxis()
     ax2.set_xlabel('Total Downloads')
-    ax2.spines['top'].set_visible(False)
-    ax2.spines['right'].set_visible(False)
-    ax2.set_title('(B) Top 20 Most Downloaded Datasets', fontsize=11, fontweight='bold', loc='left')
+    _style_panel_label(ax2, '(B) Top 20 Most Downloaded Datasets')
 
     for i, (dl, nc) in enumerate(zip(dl_vals, n_countries)):
         label = f'{dl/1e3:.0f}K'
@@ -888,11 +959,10 @@ def figure_5_concentration(output_dir):
                     ax3.text(j, i, txt, ha='center', va='center',
                              fontsize=7, color=color, fontweight='bold')
 
-        ax3.set_title('(C) Top 25 Datasets: Download Consistency — Users Only (2021-2025)',
-                       fontsize=11, fontweight='bold', loc='left', pad=15)
+        _style_panel_label(ax3, '(C) Top 25 Datasets: Download Consistency \u2014 Users Only (2021\u20132025)')
     else:
         ax3.text(0.5, 0.5, 'Data not available', ha='center', va='center', transform=ax3.transAxes)
-        ax3.set_title('(C) Download Consistency', fontsize=11, fontweight='bold', loc='left')
+        _style_panel_label(ax3, '(C) Download Consistency')
 
     plt.savefig(output_dir / 'figure7_dataset_reuse.pdf', format='pdf', bbox_inches='tight')
     plt.close()
@@ -1090,8 +1160,8 @@ def _draw_bubble_panel(ax, df, title, show_colorbar=True,
     scatter = ax.scatter(
         df['unique_users'], df['total_downloads'],
         s=sizes,
-        c=dl_per_user, cmap='viridis',
-        alpha=0.75, edgecolors='black', linewidth=0.5,
+        c=dl_per_user, cmap='YlGnBu',
+        alpha=0.75, edgecolors='white', linewidth=0.5,
         norm=plt.matplotlib.colors.LogNorm(vmin=max(dl_per_user.min(), 1), vmax=dl_per_user.max()),
         zorder=3,
     )
@@ -1102,7 +1172,8 @@ def _draw_bubble_panel(ax, df, title, show_colorbar=True,
     ax.set_ylabel('Total Downloads (log scale)')
 
     if show_colorbar:
-        plt.colorbar(scatter, ax=ax, label='Downloads per User', fraction=0.03, pad=0.04)
+        cbar = plt.colorbar(scatter, ax=ax, label='Downloads per User', fraction=0.03, pad=0.04)
+        cbar.ax.tick_params(labelsize=8)
 
     if priority_labels is None:
         priority_labels = []
@@ -1129,15 +1200,15 @@ def _draw_bubble_panel(ax, df, title, show_colorbar=True,
         ha, x_off, y_off = 'left', 8, 4
         if x > 50000:
             ha, x_off = 'right', -8
-        # Check overlap with already placed labels
+        # Better overlap detection with more spacing
         for lx, ly in labeled:
-            if abs(np.log10(x) - np.log10(lx)) < 0.2 and abs(np.log10(y) - np.log10(ly)) < 0.12:
-                y_off += 10
-        fontsize = 9.5 if row['total_downloads'] > 500000 else 8.5
+            if abs(np.log10(x) - np.log10(lx)) < 0.25 and abs(np.log10(y) - np.log10(ly)) < 0.15:
+                y_off += 12
+        fontsize = 9 if row['total_downloads'] > 500000 else 8
         fontweight = 'bold' if bold_labels and row['total_downloads'] > 1000000 else 'normal'
         ax.annotate(
             name, (x, y),
-            fontsize=fontsize, fontweight=fontweight,
+            fontsize=fontsize, fontweight=fontweight, color='#333333',
             ha=ha, va='bottom',
             xytext=(x_off, y_off), textcoords='offset points',
         )
@@ -1148,18 +1219,17 @@ def _draw_bubble_panel(ax, df, title, show_colorbar=True,
     for val in legend_sizes:
         s = (np.clip(val, 1, 2000) / np.clip(dl_per_user, 1, 2000).max()) * 800 + 15
         legend_bubbles.append(
-            ax.scatter([], [], s=s, c='gray', alpha=0.5, edgecolors='black', linewidth=0.5)
+            ax.scatter([], [], s=s, c='#AABBCC', alpha=0.5, edgecolors='white', linewidth=0.5)
         )
     ax.legend(
         legend_bubbles, [f'{v}' for v in legend_sizes],
         title='DL/User (size)', loc='upper left',
-        frameon=True, framealpha=0.9, fontsize=10, title_fontsize=10,
+        frameon=True, framealpha=0.95, fontsize=8, title_fontsize=9,
         labelspacing=1.5, borderpad=1.2,
+        facecolor='white', edgecolor='#DEE2E6',
     )
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.grid(True, alpha=0.2, which='both')
-    ax.set_title(title, fontsize=11, fontweight='bold', loc='left')
+    ax.grid(True, alpha=0.1, which='both', zorder=0)
+    _style_panel_label(ax, title)
 
 
 def figure_7_bubble_chart(output_dir):
@@ -1197,8 +1267,8 @@ def figure_7_bubble_chart(output_dir):
             has_trends = False
 
     # Layout: 2x2 grid — A (user bubble), B (EU trends), C (hub bubble), D (LMIC trends)
-    fig = plt.figure(figsize=(20, 14))
-    gs = gridspec.GridSpec(2, 2, width_ratios=[1.2, 1], hspace=0.35, wspace=0.3)
+    fig = plt.figure(figsize=(20, 15))
+    gs = gridspec.GridSpec(2, 2, width_ratios=[1.2, 1], hspace=0.3, wspace=0.3)
     ax_bubble = fig.add_subplot(gs[0, 0])   # top-left
     ax_europe = fig.add_subplot(gs[0, 1])   # top-right
     ax_hub = fig.add_subplot(gs[1, 0])      # bottom-left
@@ -1218,19 +1288,17 @@ def figure_7_bubble_chart(output_dir):
             cdf = eu_df[eu_df['country'] == country].sort_values('year')
             if len(cdf) > 0:
                 ax_europe.plot(cdf['year'], cdf['downloads'] / 1e6, 'o-',
-                               label=country, linewidth=1.3, markersize=4,
+                               label=country, linewidth=1.5, markersize=4,
                                color=eu_colors[i])
         ax_europe.set_xlabel('Year')
         ax_europe.set_ylabel('Downloads (millions)')
-        ax_europe.set_title('(B) European Countries', fontsize=11, fontweight='bold', loc='left')
-        ax_europe.legend(loc='upper left', fontsize=8, ncol=3, frameon=False)
-        ax_europe.spines['top'].set_visible(False)
-        ax_europe.spines['right'].set_visible(False)
-        ax_europe.grid(True, alpha=0.2)
+        _style_panel_label(ax_europe, '(B) European Countries')
+        ax_europe.legend(loc='upper left', fontsize=7, ncol=3)
+        ax_europe.grid(True, alpha=0.1, zorder=0)
         ax_europe.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
     else:
         ax_europe.text(0.5, 0.5, 'Data not available', ha='center', va='center', transform=ax_europe.transAxes)
-        ax_europe.set_title('(B) European Countries', fontsize=11, fontweight='bold', loc='left')
+        _style_panel_label(ax_europe, '(B) European Countries')
 
     # ---- Panel C: LMIC trends ----
     if has_trends and lmic_df is not None and not lmic_df.empty:
@@ -1240,19 +1308,17 @@ def figure_7_bubble_chart(output_dir):
             cdf = lmic_df[lmic_df['country'] == country].sort_values('year')
             if len(cdf) > 0:
                 ax_lmic.plot(cdf['year'], cdf['downloads'] / 1e3, 'o-',
-                             label=country, linewidth=1.3, markersize=4,
+                             label=country, linewidth=1.5, markersize=4,
                              color=lmic_colors[i])
         ax_lmic.set_xlabel('Year')
         ax_lmic.set_ylabel('Downloads (thousands)')
-        ax_lmic.set_title('(D) Low/Middle Income Countries', fontsize=11, fontweight='bold', loc='left')
-        ax_lmic.legend(loc='upper left', fontsize=8, ncol=3, frameon=False)
-        ax_lmic.spines['top'].set_visible(False)
-        ax_lmic.spines['right'].set_visible(False)
-        ax_lmic.grid(True, alpha=0.2)
+        _style_panel_label(ax_lmic, '(D) Low/Middle Income Countries')
+        ax_lmic.legend(loc='upper left', fontsize=7, ncol=3)
+        ax_lmic.grid(True, alpha=0.1, zorder=0)
         ax_lmic.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
     else:
         ax_lmic.text(0.5, 0.5, 'Data not available', ha='center', va='center', transform=ax_lmic.transAxes)
-        ax_lmic.set_title('(D) Low/Middle Income Countries', fontsize=11, fontweight='bold', loc='left')
+        _style_panel_label(ax_lmic, '(D) Low/Middle Income Countries')
 
     # ---- Panel C: Hub-only bubble chart ----
     if hub_df is not None and not hub_df.empty:
@@ -1411,6 +1477,7 @@ def figure_filetype_by_region(output_dir):
     bar_width = 0.18
     x = np.arange(n_cats)
 
+    region_bar_colors = [REGION_COLORS.get(r, '#999') for r in region_order]
     for i, region in enumerate(region_order):
         rdf = df[df['region'] == region]
         vals = []
@@ -1419,16 +1486,15 @@ def figure_filetype_by_region(output_dir):
             vals.append(v.values[0] if len(v) > 0 else 0)
         offset = (i - n_regions / 2 + 0.5) * bar_width
         bars = ax.bar(x + offset, vals, bar_width, label=region_labels[region],
-                      color=plt.cm.Set2(i / n_regions), edgecolor='white', linewidth=0.5)
+                      color=region_bar_colors[i], edgecolor='white', linewidth=0.5,
+                      zorder=3)
 
     ax.set_xticks(x)
-    ax.set_xticklabels([cat_labels[c] for c in cat_order], fontsize=10)
+    ax.set_xticklabels([cat_labels[c] for c in cat_order], fontsize=9)
     ax.set_ylabel('Percentage of Downloads (%)')
-    ax.legend(fontsize=9, frameon=False)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.set_title('(A) File Type Downloads by Region (Users Only)', fontsize=11, fontweight='bold', loc='left')
-    ax.grid(axis='y', alpha=0.2)
+    ax.legend(fontsize=9)
+    _style_panel_label(ax, '(A) File Type Downloads by Region (Users Only)')
+    ax.grid(axis='y', alpha=0.1, zorder=0)
 
     # ---- Panel B: Stacked horizontal bars for key categories only ----
     ax2 = axes[1]
@@ -1447,7 +1513,7 @@ def figure_filetype_by_region(output_dir):
     agg['pct'] = agg.apply(lambda r: r['downloads'] / agg_totals[r['region']] * 100, axis=1)
 
     agg_order = ['Raw + Processed\n(full reanalysis)', 'Results + Metadata\n(lightweight reuse)', 'Archives + Other']
-    agg_colors = ['#E74C3C', '#3498DB', '#BDC3C7']
+    agg_colors = [PALETTE['bot'], PALETTE['hub'], PALETTE['light_gray']]
 
     y_pos = np.arange(len(region_order))
     left = np.zeros(len(region_order))
@@ -1470,16 +1536,49 @@ def figure_filetype_by_region(output_dir):
     ax2.set_yticks(y_pos)
     ax2.set_yticklabels([region_labels[r] for r in region_order], fontsize=11)
     ax2.set_xlabel('Percentage of Downloads (%)')
-    ax2.legend(fontsize=8, loc='lower right', frameon=True, framealpha=0.9)
-    ax2.spines['top'].set_visible(False)
-    ax2.spines['right'].set_visible(False)
-    ax2.set_title('(B) Reanalysis vs. Lightweight Reuse', fontsize=11, fontweight='bold', loc='left')
+    ax2.legend(fontsize=8, loc='lower right', frameon=True, framealpha=0.95,
+               facecolor='white', edgecolor='#DEE2E6')
+    _style_panel_label(ax2, '(B) Reanalysis vs. Lightweight Reuse')
     ax2.set_xlim(0, 105)
 
     plt.tight_layout()
     plt.savefig(output_dir / 'figure_filetype_by_region.pdf', format='pdf', bbox_inches='tight')
     plt.close()
     print("    OK")
+
+
+def _draw_world_map(ax, facecolor='#F7F7F7', edgecolor='#CCCCCC', ocean_color='#EBF4FA'):
+    """Draw lightweight world map coastlines on an axes using Natural Earth GeoJSON."""
+    geojson_path = project_root / 'data' / 'ne_110m_land.geojson'
+    if not geojson_path.exists():
+        return
+    import json
+    from matplotlib.patches import Polygon as MplPolygon
+    from matplotlib.collections import PatchCollection
+
+    with open(geojson_path) as f:
+        data = json.load(f)
+
+    patches = []
+    for feature in data['features']:
+        geom = feature['geometry']
+        if geom['type'] == 'Polygon':
+            for ring in geom['coordinates']:
+                poly = MplPolygon(ring, closed=True)
+                patches.append(poly)
+        elif geom['type'] == 'MultiPolygon':
+            for polygon in geom['coordinates']:
+                for ring in polygon:
+                    poly = MplPolygon(ring, closed=True)
+                    patches.append(poly)
+
+    ax.set_facecolor(ocean_color)
+    pc = PatchCollection(patches, facecolor=facecolor, edgecolor=edgecolor,
+                         linewidth=0.3, zorder=1)
+    ax.add_collection(pc)
+    ax.set_xlim(-170, 180)
+    ax.set_ylim(-60, 85)
+    ax.set_aspect('equal', adjustable='box')
 
 
 def figure_hub_distribution(output_dir):
@@ -1505,12 +1604,12 @@ def figure_hub_distribution(output_dir):
         return
     hubs = hubs[hubs['country'] != 'Russia']
 
-    fig = plt.figure(figsize=(14, 6.5))
-    gs = gridspec.GridSpec(1, 2, width_ratios=[1.1, 1], wspace=0.35)
+    fig = plt.figure(figsize=(15, 6))
+    gs = gridspec.GridSpec(1, 2, width_ratios=[1.3, 1], wspace=0.3)
     ax_map = fig.add_subplot(gs[0, 0])
     ax_bar = fig.add_subplot(gs[0, 1])
 
-    # ---- Panel A: World scatter of hub locations ----
+    # ---- Panel A: Scatter of hub locations ----
     lats, lons = [], []
     for _, row in hubs.iterrows():
         try:
@@ -1529,49 +1628,49 @@ def figure_hub_distribution(output_dir):
     sizes = np.clip(dl_vals / dl_vals.max() * 300, 10, 300)
 
     ax_map.scatter(valid['lon'], valid['lat'], s=sizes,
-                   c='#3498DB', alpha=0.6, edgecolors='navy', linewidth=0.4, zorder=3)
+                   c=PALETTE['hub'], alpha=0.6, edgecolors='navy',
+                   linewidth=0.4, zorder=3)
 
-    # Simple world outline
     ax_map.set_xlim(-180, 180)
     ax_map.set_ylim(-60, 85)
     ax_map.set_xlabel('Longitude')
     ax_map.set_ylabel('Latitude')
     ax_map.axhline(0, color='gray', linewidth=0.3, alpha=0.5)
     ax_map.axvline(0, color='gray', linewidth=0.3, alpha=0.5)
-    # Continental outlines via grid
     ax_map.grid(True, alpha=0.15)
-    ax_map.spines['top'].set_visible(False)
-    ax_map.spines['right'].set_visible(False)
-    ax_map.set_title('(A) Hub Locations Worldwide', fontsize=11, fontweight='bold', loc='left')
+    _style_panel_label(ax_map, '(A) Hub Locations Worldwide')
 
     # Size legend
     for dl, label in [(10000, '10K'), (100000, '100K'), (500000, '500K')]:
         s = np.clip(dl / dl_vals.max() * 300, 10, 300)
-        ax_map.scatter([], [], s=s, c='#3498DB', alpha=0.6, edgecolors='navy',
+        ax_map.scatter([], [], s=s, c=PALETTE['hub'], alpha=0.6, edgecolors='navy',
                        linewidth=0.4, label=label)
-    ax_map.legend(title='Downloads', loc='lower left', fontsize=9, title_fontsize=9,
-                  frameon=True, framealpha=0.9, labelspacing=1.2)
+    ax_map.legend(title='Downloads', loc='lower left', fontsize=8, title_fontsize=9,
+                  frameon=True, framealpha=0.9, labelspacing=1.2, borderpad=1,
+                  facecolor='white', edgecolor='#cccccc')
 
     # ---- Panel B: Top 15 countries by hub count ----
     country_counts = hubs['country'].value_counts().head(15)
     country_downloads = hubs.groupby('country')['total_downloads'].sum()
 
-    colors_bar = ['#3498DB'] * len(country_counts)
-    bars = ax_bar.barh(range(len(country_counts)), country_counts.values, color=colors_bar,
-                       edgecolor='navy', linewidth=0.3, alpha=0.8)
+    # Gradient color by download volume
+    dl_by_country = [country_downloads.get(c, 0) for c in country_counts.index]
+    max_dl = max(dl_by_country) if dl_by_country else 1
+    bar_colors = [plt.cm.Blues(0.3 + 0.6 * d / max_dl) for d in dl_by_country]
+
+    bars = ax_bar.barh(range(len(country_counts)), country_counts.values,
+                       color=bar_colors, edgecolor='white', linewidth=0.5)
     ax_bar.set_yticks(range(len(country_counts)))
     ax_bar.set_yticklabels(country_counts.index, fontsize=10)
     ax_bar.invert_yaxis()
     ax_bar.set_xlabel('Number of Hubs')
-    ax_bar.spines['top'].set_visible(False)
-    ax_bar.spines['right'].set_visible(False)
-    ax_bar.set_title('(B) Hubs per Country', fontsize=11, fontweight='bold', loc='left')
+    _style_panel_label(ax_bar, '(B) Hubs per Country')
 
-    # Annotate bars with hub count and download volume
     for i, (country, count) in enumerate(country_counts.items()):
         dl = country_downloads.get(country, 0)
         dl_label = f'{dl/1e6:.1f}M DL' if dl >= 100000 else f'{dl/1e3:.0f}K DL'
-        ax_bar.text(count + 0.5, i, f'{count} ({dl_label})', va='center', fontsize=8, color='gray')
+        ax_bar.text(count + 0.5, i, f'{count} ({dl_label})', va='center',
+                    fontsize=8, color='#666666')
 
     plt.savefig(output_dir / 'figure2_hub_geography.pdf', format='pdf', bbox_inches='tight')
     plt.close()
